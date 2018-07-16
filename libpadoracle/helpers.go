@@ -21,6 +21,10 @@ type Config struct {
 }
 
 type Data struct {
+	BlockNumber         int
+	EncryptedBlockData  []byte
+	DecipheredBlockData []byte
+	NumberOperations    int
 }
 
 // ChunkBytes chunks i into n-length chunks
@@ -67,9 +71,9 @@ func XORBytes(a []byte, b []byte) []byte {
 
 // BuildPaddingBlock constructs a block padded to PCKS5/7 standard based upon the blocksize
 func BuildPaddingBlock(byteNum int, blockSize int) (padding []byte) {
-	for i := 0; i < blockSize; i++ {
+	for i := 1; i <= blockSize; i++ {
 		if (i >= blockSize-byteNum) && (byteNum <= blockSize) {
-			padding = append(padding, byte(byteNum))
+			padding = append(padding, byte(byteNum+1))
 		} else {
 			padding = append(padding, byte(0))
 		}
@@ -77,14 +81,16 @@ func BuildPaddingBlock(byteNum int, blockSize int) (padding []byte) {
 	return padding
 }
 
-// GenerateSearchBlock constructs a block of forged ciphertext that will be used to test the padding oracle
-func GenerateSearchBlock(previousBlock []byte, blockData []byte, byteNum int, blockNum int, padByteValue int, blockSize int) (searchBlock []byte) {
-	for i := 0; i < blockSize; i++ {
-		if i < blockSize-padByteValue {
-			searchBlock = append(searchBlock, byte(padByteValue))
-		} else {
-			searchBlock = append(searchBlock, byte(0))
-		}
+// BuildSearchBlock constructs a block of forged ciphertext that will be used to test the padding oracle
+func BuildSearchBlock(decipheredBlockBytes []byte, padByteValue int, blockSize int) (searchBlock []byte) {
+	tmpBlock := append([]byte{byte(padByteValue)}, decipheredBlockBytes...)
+	for i := 0; i < blockSize-len(tmpBlock); i++ {
+		tmpBlock = append([]byte{byte(0)}, tmpBlock...)
 	}
 	return searchBlock
+}
+
+// BuildRawOraclePayload
+func BuildRawOraclePayload(paddingBlock []byte, cipherTextBlock []byte) []byte {
+	return append(paddingBlock, cipherTextBlock...)
 }
