@@ -1,13 +1,13 @@
 package libpadoracle
 
 import (
-	"bufio"
 	"encoding/base64"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
 )
+
+var client = &http.Client{}
 
 // EncodePayload turns the raw oracle payload (IV + Ciphertext) into whatever format is required by the endpoint server. Modify this routine to suit the specific needs of the application.
 func EncodePayload(RawPadOraclePayload []byte) (encodedPayload string) {
@@ -22,7 +22,6 @@ func DecodeCiphertextPayload(EncodedPayload string) []byte {
 	// This function should return a byte array of the ciphertext's raw bytes //
 	decoded, err := base64.StdEncoding.DecodeString(EncodedPayload)
 	Check(err)
-	fmt.Println(decoded)
 	return decoded
 }
 
@@ -33,22 +32,9 @@ func DecodeIV(IV string) []byte {
 
 // CallOracle actually makes the HTTP/whatever request to the server that provides the padding oracle. Modify this to suit your application's needs.
 func CallOracle(encodedPayload string) (*http.Response, string) {
-	// Sample
-	var client http.Client
-	reqData := fmt.Sprintf(`POST / HTTP/1.1
-Host: 127.0.0.1:12345
-Cache-Control: max-age=0
-Upgrade-Insecure-Requests: 1
-User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3315.0 Safari/537.36
-Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8
-Accept-Encoding: gzip, deflate
-Accept-Language: en-GB,en-US;q=0.9,en;q=0.8
-Connection: close
-Content-Length: 322
+	// Sample to be used with padex.py
 
-%s`, encodedPayload)
-	x := bufio.NewReader(strings.NewReader(reqData)) //wtf? bufio/io.reader is DUMB
-	req, err := http.ReadRequest(x)
+	req, err := http.NewRequest("POST", "http://127.0.0.1:12345", strings.NewReader(encodedPayload))
 	Check(err)
 	resp, err := client.Do(req)
 	Check(err)

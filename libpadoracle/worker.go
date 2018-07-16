@@ -1,6 +1,7 @@
 package libpadoracle
 
 import (
+	"encoding/hex"
 	"fmt"
 	"sync"
 )
@@ -18,7 +19,7 @@ func WriteOutput(wg *sync.WaitGroup, decipherChan chan Data) {
 	defer wg.Done()
 	Results := map[int]Data{}
 	for block := range decipherChan {
-		fmt.Printf("Decrypted [Block %d]  - [%v]:[%v] - Cleartext: [%v]", block.BlockNumber, block.EncryptedBlockData, block.DecipheredBlockData, string(block.DecipheredBlockData))
+		fmt.Printf("Decrypted [Block %d]  - [%v]:[%v] - Cleartext: [%v]\n", block.BlockNumber, hex.EncodeToString(block.EncryptedBlockData), hex.EncodeToString(block.DecipheredBlockData), string(block.DecipheredBlockData))
 		Results[block.BlockNumber] = block
 	}
 	var ClearText []byte

