@@ -2,6 +2,7 @@ package libpadoracle
 
 import (
 	"encoding/base64"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -34,7 +35,7 @@ func DecodeIV(IV string) []byte {
 func CallOracle(encodedPayload string) (*http.Response, string) {
 	// Sample to be used with padex.py
 
-	req, err := http.NewRequest("POST", "http://127.0.0.1:12345", strings.NewReader(encodedPayload))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://127.0.0.1:12345/?p=%v", encodedPayload), strings.NewReader(encodedPayload))
 	Check(err)
 	resp, err := client.Do(req)
 	Check(err)

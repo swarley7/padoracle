@@ -18,6 +18,7 @@ type Config struct {
 	BlockSize      int
 	Algorithm      string
 	Threads        int
+	NumBlocks      int
 }
 
 type Data struct {
