@@ -56,13 +56,16 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
 	for byteNum, byteData := range blockData { // Iterate over each byte
-		fmt.Printf("Checking Block: %d; Byte %d; val: %v\n", blockNum, byteNum, hex.EncodeToString([]byte{byteData}))
+		fmt.Printf("Checking: [Block %v] [Byte %v] [Value: %v]\n", blockNum, byteNum, hex.EncodeToString([]byte{byteData}))
 		wg2.Add(1)
 		var found bool
 		// Iterate through each possible byte value until padding error goes away
 		for _, i := range rangeData {
 			threadCh <- struct{}{}
-			if blockNum == cfg.NumBlocks-1 && byteNum == 0 {
+			if blockNum == cfg.NumBlocks-1 && byteNum == 0 { // Edge case for the VERY LAST byte of ciphertext;
+				// this one will ALWAYS allow 0x01 to be valid (as 1 byte of padding in the final block is always a valid value)
+				// Additionally, there's a 1/256 chance that 0x02 will be valid
+				// The probability of each successive value is exponential, so we can probably assume it's not likely
 				found = PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes)
 			} else {
 				go PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes)
@@ -78,6 +81,11 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	returnData.BlockNumber = blockNum
 	returnData.EncryptedBlockData = blockData
 	returnData.DecipheredBlockData = decipheredBlockBytes
+	if blockNum == cfg.NumBlocks-1 { // Last block - unpad before saving cleartext
+		returnData.UnpaddedCleartext = string(Unpad(decipheredBlockBytes))
+	} else {
+		returnData.UnpaddedCleartext = string(decipheredBlockBytes)
+	}
 	decipherChan <- returnData
 }
 
@@ -87,7 +95,6 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 		<-threadCh // Release a thread once we're done with this goroutine
 	}()
 	var RawOracleData []byte
-	// fmt.Printf("Testing : %v - %v\n", blockNum, bruteForceByteValue)
 	// Math here - all the XORing and building of weird padding happens in these routines
 	padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize)
 	searchBlock := BuildSearchBlock(decipheredBlockBytes, bruteForceByteValue, cfg.BlockSize)
@@ -108,5 +115,5 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 		}
 		return true
 	}
-	return false
+	return false // This is to aid with detection of the final ciphertext's pad byte
 }
