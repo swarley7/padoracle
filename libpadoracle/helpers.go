@@ -28,6 +28,8 @@ type Config struct {
 	Algorithm      string
 	Threads        int
 	NumBlocks      int
+	Sleep          int
+	BlockRange     string
 }
 
 type Data struct {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -18,16 +19,17 @@ func Run(cfg Config) {
 
 func WriteOutput(wg *sync.WaitGroup, decipherChan chan Data) {
 	defer wg.Done()
-	Results := map[int]Data{}
+	Results := []Data{}
 	for block := range decipherChan {
 		fmt.Printf("Decrypted [%v]\n╰> Original Ciphertext:\t[%v]\n╰> Decrypted (Hex):\t[%v]\n╰> Cleartext:\t\t[%v]\n", r.Sprintf("Block %d", block.BlockNumber), b.Sprintf(hex.EncodeToString(block.EncryptedBlockData)), g.Sprintf(hex.EncodeToString(block.DecipheredBlockData)), g.Sprintf(block.UnpaddedCleartext))
-		Results[block.BlockNumber] = block
+		Results = append(Results, block)
 	}
 	var ClearText bytes.Buffer
-	for i := 1; i <= len(Results)+1; i++ { // need to fix this; sort on Results[i] instead of this crap - this won't work if you're not starting at block 1...
-		ClearText.WriteString(Results[i].UnpaddedCleartext)
+	sort.Slice(Results, func(i, j int) bool { return Results[i].BlockNumber < Results[j].BlockNumber })
+	for _, res := range Results { // need to fix this; sort on Results[i] instead of this crap - this won't work if you're not starting at block 1...
+		ClearText.WriteString(res.UnpaddedCleartext)
 	}
-	fmt.Printf("\n****** Decrypted data ********\n")
+	fmt.Printf("\n******** %v ********\n", y.Sprintf("Decrypted data"))
 	fmt.Printf("%v\n", ClearText.String())
 
 }
