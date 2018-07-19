@@ -17,6 +17,14 @@ var m = color.New(color.FgMagenta, color.Bold)
 var b = color.New(color.FgBlue)
 var bb = color.New(color.FgBlue, color.Bold)
 
+func Reverse(s string) string {
+	var reverse string
+	for i := len(s) - 1; i >= 0; i-- {
+		reverse += string(s[i])
+	}
+	return reverse
+}
+
 func Check(err error) {
 	if err != nil {
 		panic(err)
@@ -43,6 +51,12 @@ type Config struct {
 	Sleep          int
 	BlockRange     string
 	Writer         chan WriteData
+	MetricsChan    chan struct{}
+	Statistics     Stats
+}
+
+type Stats struct {
+	NumRequests int
 }
 
 type Data struct {

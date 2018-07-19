@@ -20,6 +20,13 @@ func Run(cfg Config) {
 	wg.Wait()
 }
 
+// func StatsTracking(cfg Config) {
+// 	cfg.MetricsChan = make(chan struct{})
+// 	for i := range cfg.MetricsChan {
+
+// 	}
+// }
+
 func WriteOutput(wg *sync.WaitGroup, decipherChan chan Data, cfg Config) {
 	defer wg.Done()
 	Results := []Data{}
