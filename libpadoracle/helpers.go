@@ -8,16 +8,28 @@ import (
 )
 
 // Get yo colours sorted
-var g = color.New(color.FgGreen, color.Bold)
+var g = color.New(color.FgGreen)
+
+var gb = color.New(color.FgGreen, color.Bold)
 var y = color.New(color.FgYellow, color.Bold)
 var r = color.New(color.FgRed, color.Bold)
 var m = color.New(color.FgMagenta, color.Bold)
-var b = color.New(color.FgBlue, color.Bold)
+var b = color.New(color.FgBlue)
+var bb = color.New(color.FgBlue, color.Bold)
 
 func Check(err error) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+type WriteData struct {
+	ByteNum    int
+	Deciphered string
+	ByteValue  string
+	BlockData  string
+	BlockNum   int
+	NumBlocks  int
 }
 
 type Config struct {
@@ -30,6 +42,7 @@ type Config struct {
 	NumBlocks      int
 	Sleep          int
 	BlockRange     string
+	Writer         chan WriteData
 }
 
 type Data struct {

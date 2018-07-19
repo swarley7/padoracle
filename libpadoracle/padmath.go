@@ -4,14 +4,16 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sync"
+
+	"github.com/gosuri/uiprogress"
 )
 
 func GetRangeDataSafe() []int {
 	rangeData := []int{}
-	for i := 2; i < 256; i++ {
+	for i := 3; i < 256; i++ {
 		rangeData = append(rangeData, i)
 	}
-	rangeData = append(rangeData, []int{0, 1}...)
+	rangeData = append(rangeData, []int{0, 2, 1}...)
 	return rangeData
 }
 
@@ -29,6 +31,9 @@ func PadOperations(wg *sync.WaitGroup, cfg Config, cipherText []byte, decipherCh
 	}
 	Blocks := ChunkBytes(cipherText, cfg.BlockSize)
 	cfg.NumBlocks = len(Blocks)
+	wg.Add(1)
+	go WriteOutput(wg, decipherChan, cfg)
+
 	// fmt.Println(Blocks)
 	if lastBlockLen := len(Blocks[len(Blocks)-1]); lastBlockLen != cfg.BlockSize {
 		err := fmt.Errorf("Invalid Block Size at Block #%d (%v bytes - should be %d)", len(Blocks), lastBlockLen, cfg.BlockSize)
@@ -36,7 +41,7 @@ func PadOperations(wg *sync.WaitGroup, cfg Config, cipherText []byte, decipherCh
 	}
 	endBlock := len(Blocks)
 	fmt.Printf("Total Blocks: [%v]\n", len(Blocks))
-	startBlock := 1
+	startBlock := 10
 	for blockNum, blockData := range Blocks[startBlock:endBlock] {
 		wg2.Add(1)
 		go PerBlockOperations(&wg2, cfg, threadCh, decipherChan, blockNum+startBlock, blockData, Blocks[blockNum+startBlock-1])
@@ -50,17 +55,28 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	defer func() {
 		wg.Done()
 	}()
+	var strData string
+	var outData string
+	bar := uiprogress.AddBar(cfg.BlockSize).AppendCompleted().PrependElapsed()
+	bar.PrependFunc(func(b *uiprogress.Bar) string {
+		return strData
+	})
+	bar.AppendFunc(func(b *uiprogress.Bar) string {
+		return outData
+	})
 	rangeData := GetRangeDataSafe()
 	blockDecipherChan := make(chan byte, 1)
 	returnData := Data{}
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
-	for byteNum, byteData := range blockData { // Iterate over each byte
-		fmt.Printf("Checking: [Block %v] [Byte %v] [Value: %v]\n", blockNum, byteNum, hex.EncodeToString([]byte{byteData}))
+	for byteNum, _ := range blockData { // Iterate over each byte
 		wg2.Add(1)
 		var found bool
 		// Iterate through each possible byte value until padding error goes away
 		for _, i := range rangeData {
+
+			data := WriteData{ByteNum: byteNum, Deciphered: hex.EncodeToString(decipheredBlockBytes), ByteValue: fmt.Sprintf("%x", i), BlockData: string(blockData), BlockNum: blockNum, NumBlocks: cfg.NumBlocks}
+			strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", data.BlockNum, g.Sprintf("%v", data.Deciphered), y.Sprintf("%02s", data.ByteValue), b.Sprintf("%x", data.BlockData[data.ByteNum+1:len(data.BlockData)]))
 			threadCh <- struct{}{}
 			if blockNum == cfg.NumBlocks-1 && byteNum == 0 { // Edge case for the VERY LAST byte of ciphertext;
 				// this one will ALWAYS allow 0x01 to be valid (as 1 byte of padding in the final block is always a valid value)
@@ -76,6 +92,8 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 		}
 		nextByte := <-blockDecipherChan
 		decipheredBlockBytes = append([]byte{nextByte}, decipheredBlockBytes...)
+		bar.Incr()
+
 		wg2.Wait()
 	}
 	returnData.BlockNumber = blockNum
@@ -86,6 +104,8 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	} else {
 		returnData.UnpaddedCleartext = string(decipheredBlockBytes)
 	}
+	outData = fmt.Sprintf("Decrypted [%v]\n╰> Original Ciphertext:\t[%v]\n╰> Decrypted (Hex):\t[%v]\n╰> Cleartext:\t\t[%v]\n", r.Sprintf("Block %d", returnData.BlockNumber), b.Sprintf(hex.EncodeToString(returnData.EncryptedBlockData)), g.Sprintf(hex.EncodeToString(returnData.DecipheredBlockData)), gb.Sprintf(returnData.UnpaddedCleartext))
+
 	decipherChan <- returnData
 }
 
