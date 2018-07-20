@@ -10,24 +10,30 @@ import (
 )
 
 func Run(cfg Config) {
+	defer func() { close(cfg.MetricsChan) }()
+
+	cfg.MetricsChan = make(chan int)
+	cfg.Statistics = Stats{
+		NumRequests: 0,
+	}
 	decipherChan := make(chan Data)
 	cfg.Writer = make(chan WriteData)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	uiprogress.Start()
-
-	go PadOperations(&wg, cfg, cfg.BaseCiphertext, decipherChan)
+	go StatsTracking(&cfg)
+	go PadOperations(&wg, &cfg, cfg.BaseCiphertext, decipherChan)
 	wg.Wait()
 }
 
-// func StatsTracking(cfg Config) {
-// 	cfg.MetricsChan = make(chan struct{})
-// 	for i := range cfg.MetricsChan {
+func StatsTracking(cfg *Config) {
 
-// 	}
-// }
+	for i := range cfg.MetricsChan {
+		cfg.Statistics.NumRequests = cfg.Statistics.NumRequests + i
+	}
+}
 
-func WriteOutput(wg *sync.WaitGroup, decipherChan chan Data, cfg Config) {
+func WriteOutput(wg *sync.WaitGroup, decipherChan chan Data, cfg *Config) {
 	defer wg.Done()
 	Results := []Data{}
 
@@ -44,7 +50,7 @@ func WriteOutput(wg *sync.WaitGroup, decipherChan chan Data, cfg Config) {
 	}
 	uiprogress.Stop()
 
-	fmt.Printf("\n******** %v ********\n", y.Sprintf("Decrypted data"))
+	fmt.Printf("\n******** [%v] [%v requests total] ********\n", y.Sprintf("Decrypted data"), y.Sprintf("%d", cfg.Statistics.NumRequests))
 	fmt.Printf("%v\n", ClearText.String())
 
 }

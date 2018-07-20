@@ -51,7 +51,7 @@ type Config struct {
 	Sleep          int
 	BlockRange     string
 	Writer         chan WriteData
-	MetricsChan    chan struct{}
+	MetricsChan    chan int
 	Statistics     Stats
 }
 

@@ -18,7 +18,7 @@ func GetRangeDataSafe() []int {
 }
 
 // PerByteOperations performs the actual math on each byte of the CipherText
-func PadOperations(wg *sync.WaitGroup, cfg Config, cipherText []byte, decipherChan chan Data) {
+func PadOperations(wg *sync.WaitGroup, cfg *Config, cipherText []byte, decipherChan chan Data) {
 	defer func() {
 		close(decipherChan)
 		wg.Done()
@@ -44,7 +44,7 @@ func PadOperations(wg *sync.WaitGroup, cfg Config, cipherText []byte, decipherCh
 	startBlock := 1
 	for blockNum, blockData := range Blocks[startBlock:endBlock] {
 		wg2.Add(1)
-		go PerBlockOperations(&wg2, cfg, threadCh, decipherChan, blockNum+startBlock, blockData, Blocks[blockNum+startBlock-1])
+		go PerBlockOperations(&wg2, *cfg, threadCh, decipherChan, blockNum+startBlock, blockData, Blocks[blockNum+startBlock-1])
 	}
 	wg2.Wait()
 }
@@ -133,7 +133,7 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 
 		encodedPayload := EncodePayload(RawOracleData)
 		httpResp, strResponseBody := CallOracle(encodedPayload)
-
+		cfg.MetricsChan <- 1
 		if CheckResponse(httpResp, strResponseBody) { // this one didn't return a pad error - we've probably decrypted it!
 			defer wg.Done()
 			continueChan <- true
