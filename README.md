@@ -13,14 +13,16 @@ For example, given the cleartext `AAAA\x04\x04\x04\x04`, the last byte (`\x04`) 
 Sure there are. In fact, I've used some of them before!
 
 - `padbuster`: works ok, but it's fairly old and dated, and written in Perl (which is a Write-Only language) 
-- `padding-oracle-attack`: very good python-based solution. Easy to modify to suit specific pad-oracle requirements. A bit inflexible in how it approaches the problem, and, most importantly, it's very slow.
+- `padding-oracle-attack` ([https://github.com/mpgn/Padding-oracle-attack](https://github.com/mpgn/Padding-oracle-attack): very good python-based solution. Easy to modify to suit specific pad-oracle requirements. A bit inflexible in how it approaches the problem, and (most importantly), it's very slow.
 
 `padoracle` is *fast*. On my test system it decrypted 16 blocks of 16 byte ciphertext in under 1.5 mins (using 100 threads). The reason for this speed increase, is that each block is decrypted independently of the others, in parallel. There is nothing in the attack that requires each block to be decrypted sequentially.
 
-
+Also, I learn/understand things better by doing it so this was a good way to learn the math and maybe apply some lateral thinking to the exploitation process.
 
 ## Usage
-`padoracle` is super extensible and can be made to suit any requirements. However, it does require some modifications in order to make it work. First thing's first; clone the repo.
+`padoracle` is super extensible and can be made to suit any requirements. However, it does require some modifications in order to make it work. 
+
+First thing's first; clone the repo.
 
 `git clone https://github.com/swarley7/padoracle.git && cd padoracle`
 
@@ -33,6 +35,9 @@ Next comes the hard part (it's not that hard really). Open `./libpadoracle/modif
 
 
 ## Examples
+
+!["Busting pad oracles"](./sample.png)
+!["Finished"](./sample_finished.png)
 
 ## Credits
 
