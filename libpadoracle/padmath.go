@@ -131,10 +131,10 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 		RawOracleData = BuildRawOraclePayload(oracleIvBlock, blockData)
 		// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
 
-		encodedPayload := EncodePayload(RawOracleData)
-		httpResp, strResponseBody := CallOracle(encodedPayload)
+		encodedPayload := cfg.Pad.EncodePayload(RawOracleData)
+		resp := cfg.Pad.CallOracle(encodedPayload)
 		cfg.MetricsChan <- 1
-		if CheckResponse(httpResp, strResponseBody) { // this one didn't return a pad error - we've probably decrypted it!
+		if cfg.Pad.CheckResponse(resp) { // this one didn't return a pad error - we've probably decrypted it!
 			defer wg.Done()
 			continueChan <- true
 			close(continueChan)

@@ -7,6 +7,15 @@ import (
 	"github.com/fatih/color"
 )
 
+// The Pad interface
+type pad interface {
+	EncodePayload([]byte) string
+	DecodeCiphertextPayload(string) []byte
+	DecodeIV(string) []byte
+	CallOracle(string) map[string][]byte
+	CheckResponse(map[string][]byte) bool
+}
+
 // Get yo colours sorted
 var g = color.New(color.FgGreen)
 
@@ -53,6 +62,7 @@ type Config struct {
 	Writer         chan WriteData
 	MetricsChan    chan int
 	Statistics     Stats
+	Pad            pad
 }
 
 type Stats struct {
