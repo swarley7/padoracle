@@ -1,6 +1,7 @@
 package libpadoracle
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -42,6 +43,17 @@ func Reverse(s string) string {
 func Check(err error) {
 	if err != nil {
 		panic(err)
+	}
+}
+
+// pkcs7pad add pkcs7 padding
+func PKCS7(data []byte, blockSize int) ([]byte, error) {
+	if blockSize < 0 || blockSize > 256 {
+		return nil, fmt.Errorf("pkcs7: Invalid block size %d", blockSize)
+	} else {
+		padLen := 16 - len(data)%blockSize
+		padding := bytes.Repeat([]byte{byte(padLen)}, padLen)
+		return append(data, padding...), nil
 	}
 }
 

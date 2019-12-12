@@ -22,6 +22,7 @@ func Run(cfg Config) {
 	wg.Add(1)
 	uiprogress.Start()
 	go StatsTracking(&cfg)
+	fmt.Println(cfg.Mode)
 	if cfg.Mode == MODE_DECRYPT {
 		go PadOperations(&wg, &cfg, cfg.BaseCiphertext, decipherChan)
 

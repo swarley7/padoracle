@@ -174,5 +174,6 @@ func VulnServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprintf(w, "The decrypted plaintext is:\n\n%s", pt)
+	fmt.Printf("The decrypted plaintext is:\n\n%s", pt)
 	return
 }

@@ -159,10 +159,10 @@ func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
 	}
 	// So at this point plaintext should look like:
 	// [Block0: IV][Block1 - Block n-1: Target Plaintext to be "encrypted"]
-
 	// Chunk up the PKCS7-padded plaintext into BS-sized blocks
-	plainTextChunks := ChunkBytes(Pad(plainText, cfg.BlockSize), cfg.BlockSize)
-
+	tmp, err := PKCS7(plainText, cfg.BlockSize)
+	Check(err)
+	plainTextChunks := ChunkBytes(tmp, cfg.BlockSize)
 	// New slice to store our resulting ciphertext in; it needs space for the iv and final ciphertext block
 	cipherTextChunks := make([][]byte, len(plainTextChunks)+1)
 
@@ -176,23 +176,30 @@ func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
 		// prepend the next ciphertext chunk to the list for processing
 		cipherTextChunks[i] = nextCt
 	}
+	outBytes := []byte{}
+	for _, b := range cipherTextChunks {
+		outBytes = append(outBytes, b...)
+	}
+	fmt.Println(hex.EncodeToString(outBytes))
 }
 
 // Encrypting works a little differently, and is dependent on the previous block being calculated, unlike decrypting :(. Paralleling this operation is likely not possible?
 func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plaintText []byte) (iv []byte) {
 	// threadCh := make(chan struct{}, cfg.Threads)
 	rangeData := GetRangeDataSafe()
-	decipheredBlockBytes := []byte{}
+	decipheredBlockBytes := GenerateFullSlice(0x00, cfg.BlockSize)
 	var RawOracleData []byte
-
+	found := false
 	for byteNum, _ := range plaintText { // Iterate over each byte
 		for _, i := range rangeData {
-			padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize)                   // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
-			searchBlock := BuildSearchBlock(decipheredBlockBytes, i, cfg.BlockSize) // gives us the modified IV block, mutating the last byte backwards
-			nextPadBlock := BuildPaddingBlock(byteNum+1, cfg.BlockSize)             // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
-			if byteNum > cfg.BlockSize {
-				nextPadBlock[byteNum] = 0x00
-			}
+			found = false
+			padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize) // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
+			searchBlock := append(GenerateFullSlice(0x00, cfg.BlockSize-byteNum-1), byte(i))
+			searchBlock = append(searchBlock, decipheredBlockBytes[len(decipheredBlockBytes)-byteNum:]...)
+			// gives us the modified IV block, mutating the last byte backwards
+			// nextPadBlock := BuildPaddingBlock(byteNum+1, cfg.BlockSize) // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
+			nextPadBlock := append(GenerateFullSlice(0x00, cfg.BlockSize-byteNum-1), GenerateFullSlice(byte(byteNum+2), byteNum+1)...)
+
 			RawOracleData = BuildRawOraclePayload(searchBlock, cipherText)
 			// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
 			encodedPayload := cfg.Pad.EncodePayload(RawOracleData)
@@ -200,14 +207,23 @@ func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plai
 			if !cfg.Pad.CallOracle(encodedPayload) {
 				continue
 			}
-			decipheredBlockBytes = append([]byte{byte(i)}, decipheredBlockBytes...) // prepend the found byte
+			decipheredBlockBytes[cfg.BlockSize-byteNum-1] = byte(i) // prepend the found byte
 			// tmp := XORBytes(searchBlock, cipherText)
 			// oracleIvBlock := XORBytes(tmp, padBlock)
-			tmp := XORBytes(decipheredBlockBytes, padBlock[byteNum:])
-			decipheredBlockBytes = XORBytes(tmp, nextPadBlock[byteNum:])
-		}
+			tmp := XORBytes(decipheredBlockBytes, padBlock)
+			found = true
 
+			if byteNum == cfg.BlockSize {
+				continue
+			}
+			decipheredBlockBytes = XORBytes(tmp, nextPadBlock)
+		}
+		if found {
+			continue
+		}
 	}
+	iv = XORBytes(decipheredBlockBytes, GenerateFullSlice(0x11, cfg.BlockSize))
+	iv = XORBytes(iv, plaintText)
 	return iv
 }
 
