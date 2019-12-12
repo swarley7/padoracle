@@ -22,7 +22,12 @@ func Run(cfg Config) {
 	wg.Add(1)
 	uiprogress.Start()
 	go StatsTracking(&cfg)
-	go PadOperations(&wg, &cfg, cfg.BaseCiphertext, decipherChan)
+	if cfg.Mode == MODE_DECRYPT {
+		go PadOperations(&wg, &cfg, cfg.BaseCiphertext, decipherChan)
+
+	} else if cfg.Mode == MODE_ENCRYPT {
+		go PadOperationsEncrypt(&wg, &cfg, cfg.TargetPlaintext)
+	}
 	wg.Wait()
 }
 

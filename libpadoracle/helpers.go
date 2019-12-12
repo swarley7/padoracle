@@ -7,13 +7,18 @@ import (
 	"github.com/fatih/color"
 )
 
+const (
+	MODE_DECRYPT = 0
+	MODE_ENCRYPT = 1
+)
+
 // The Pad interface
 type pad interface {
 	EncodePayload([]byte) string
 	DecodeCiphertextPayload(string) []byte
 	DecodeIV(string) []byte
-	CallOracle(string) map[string][]byte
-	CheckResponse(map[string][]byte) bool
+	CallOracle(string) bool
+	// CheckResponse(interface{}) bool
 }
 
 // Get yo colours sorted
@@ -50,19 +55,21 @@ type WriteData struct {
 }
 
 type Config struct {
-	Debug          bool
-	IV             []byte
-	BaseCiphertext []byte
-	BlockSize      int
-	Algorithm      string
-	Threads        int
-	NumBlocks      int
-	Sleep          int
-	BlockRange     string
-	Writer         chan WriteData
-	MetricsChan    chan int
-	Statistics     Stats
-	Pad            pad
+	Mode            int
+	Debug           bool
+	IV              []byte
+	BaseCiphertext  []byte
+	TargetPlaintext []byte
+	BlockSize       int
+	Algorithm       string
+	Threads         int
+	NumBlocks       int
+	Sleep           int
+	BlockRange      string
+	Writer          chan WriteData
+	MetricsChan     chan int
+	Statistics      Stats
+	Pad             pad
 }
 
 type Stats struct {
@@ -160,4 +167,12 @@ func BuildSearchBlock(decipheredBlockBytes []byte, padByteValue int, blockSize i
 // BuildRawOraclePayload
 func BuildRawOraclePayload(paddingBlock []byte, cipherTextBlock []byte) []byte {
 	return append(paddingBlock, cipherTextBlock...)
+}
+
+func GenerateFullSlice(data byte, size int) []byte {
+	out := make([]byte, size)
+	for i := 0; i < size; i++ {
+		out[i] = data
+	}
+	return out
 }

