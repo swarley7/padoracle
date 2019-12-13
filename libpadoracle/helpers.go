@@ -166,6 +166,11 @@ func BuildPaddingBlock(byteNum int, blockSize int) (padding []byte) {
 	return padding
 }
 
+type Out struct {
+	Ok bool
+	D  []byte
+}
+
 // BuildSearchBlock constructs a block of forged ciphertext that will be used to test the padding oracle
 func BuildSearchBlock(decipheredBlockBytes []byte, padByteValue int, blockSize int) (searchBlock []byte) {
 	searchBlock = append([]byte{byte(padByteValue)}, decipheredBlockBytes...)

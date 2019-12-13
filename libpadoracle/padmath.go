@@ -169,10 +169,13 @@ func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
 	// We need a 'random' last block. It doesn't actually have to be random so I've filled it with A's
 	cipherTextChunks[len(cipherTextChunks)-1] = GenerateFullSlice(0x41, cfg.BlockSize)
 	// Reverse the order of the search
+	fmt.Println(cfg.Threads)
+	threadCh := make(chan struct{}, cfg.Threads)
+
 	for i := len(plainTextChunks) - 1; i >= 0; i-- {
 		// Grab the next ciphertext and target plaintext blocks from the array
 		ct := cipherTextChunks[i+1]
-		nextCt := PerBlockOperationsEncrypt(*cfg, i, ct, plainTextChunks[i])
+		nextCt := PerBlockOperationsEncrypt(*cfg, i, ct, plainTextChunks[i], threadCh)
 		// prepend the next ciphertext chunk to the list for processing
 		cipherTextChunks[i] = nextCt
 	}
@@ -184,80 +187,71 @@ func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
 }
 
 // Encrypting works a little differently, and is dependent on the previous block being calculated, unlike decrypting :(. Paralleling this operation is likely not possible?
-func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plaintText []byte) (iv []byte) {
+func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plaintText []byte, threadCh chan struct{}) (iv []byte) {
 	// threadCh := make(chan struct{}, cfg.Threads)
+	wg := sync.WaitGroup{}
 	rangeData := GetRangeDataSafe()
 	decipheredBlockBytes := GenerateFullSlice(0x00, cfg.BlockSize)
-	var RawOracleData []byte
-	found := false
+	outchan := make(chan []byte)
+
 	for byteNum, _ := range plaintText { // Iterate over each byte
+		continueChan := make(chan bool, 1)
+		wg.Add(1)
+
 		for _, i := range rangeData {
-			found = false
-			padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize) // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
-			searchBlock := append(GenerateFullSlice(0x00, cfg.BlockSize-byteNum-1), byte(i))
-			searchBlock = append(searchBlock, decipheredBlockBytes[len(decipheredBlockBytes)-byteNum:]...)
-			// gives us the modified IV block, mutating the last byte backwards
-			// nextPadBlock := BuildPaddingBlock(byteNum+1, cfg.BlockSize) // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
-			nextPadBlock := append(GenerateFullSlice(0x00, cfg.BlockSize-byteNum-1), GenerateFullSlice(byte(byteNum+2), byteNum+1)...)
-
-			RawOracleData = BuildRawOraclePayload(searchBlock, cipherText)
-			// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
-			encodedPayload := cfg.Pad.EncodePayload(RawOracleData)
-			// cfg.MetricsChan <- 1
-			if !cfg.Pad.CallOracle(encodedPayload) {
-				continue
-			}
-			decipheredBlockBytes[cfg.BlockSize-byteNum-1] = byte(i) // prepend the found byte
-			// tmp := XORBytes(searchBlock, cipherText)
-			// oracleIvBlock := XORBytes(tmp, padBlock)
-			tmp := XORBytes(decipheredBlockBytes, padBlock)
-			found = true
-
-			if byteNum == cfg.BlockSize {
-				continue
-			}
-			decipheredBlockBytes = XORBytes(tmp, nextPadBlock)
+			threadCh <- struct{}{}
+			fmt.Println("Here ", i)
+			go PerByteOperationsEncrypt(&wg, threadCh, outchan, cfg, i, byteNum, blockNum, cipherText, decipheredBlockBytes, continueChan)
 		}
-		if found {
-			continue
-		}
+		decipheredBlockBytes = <-outchan
 	}
+	wg.Wait()
+
 	iv = XORBytes(decipheredBlockBytes, GenerateFullSlice(0x11, cfg.BlockSize))
 	iv = XORBytes(iv, plaintText)
 	return iv
 }
 
 // PerByteOperations performs the actual math on each byte of the CipherText
-func PerByteOperationsEncrypt(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipherChan chan byte, cfg Config, bruteForceByteValue int, byteNum int, blockNum int, blockData []byte, IV []byte, decipheredBlockBytes []byte, continueChan chan bool) bool {
+func PerByteOperationsEncrypt(wg *sync.WaitGroup, threadCh chan struct{}, outchan chan []byte, cfg Config, bruteForceByteValue int, byteNum int, blockNum int, cipherText []byte, decipheredBlockBytes []byte, continueChan chan bool) {
 	defer func() {
 		<-threadCh // Release a thread once we're done with this goroutine
 	}()
 	select {
 	case <-continueChan:
-		return false
+		return
 	default:
-		var RawOracleData []byte
-		// Math here - all the XORing and building of weird padding happens in these routines
-		padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize)
-		searchBlock := BuildSearchBlock(decipheredBlockBytes, bruteForceByteValue, cfg.BlockSize)
-		tmp := XORBytes(searchBlock, IV)
-		oracleIvBlock := XORBytes(tmp, padBlock)
+		padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize) // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
+		searchBlock := append(GenerateFullSlice(0x00, cfg.BlockSize-byteNum-1), byte(bruteForceByteValue))
+		searchBlock = append(searchBlock, decipheredBlockBytes[len(decipheredBlockBytes)-byteNum:]...)
+		// gives us the modified IV block, mutating the last byte backwards
+		// nextPadBlock := BuildPaddingBlock(byteNum+1, cfg.BlockSize) // gives us [0x00,...,0x01] -> [0x10, ..., 0x10]
+		nextPadBlock := append(GenerateFullSlice(0x00, cfg.BlockSize-byteNum-1), GenerateFullSlice(byte(byteNum+2), byteNum+1)...)
 
-		RawOracleData = BuildRawOraclePayload(oracleIvBlock, blockData)
+		RawOracleData := BuildRawOraclePayload(searchBlock, cipherText)
 		// padBlock := BuildPaddedBlock(IV, blockData, bruteForceByteValue, cfg.blockSize)
-
 		encodedPayload := cfg.Pad.EncodePayload(RawOracleData)
+		// cfg.MetricsChan <- 1
+
 		cfg.MetricsChan <- 1
 		if cfg.Pad.CallOracle(encodedPayload) { // this one didn't return a pad error - we've probably decrypted it!
 			defer wg.Done()
 			continueChan <- true
 			close(continueChan)
-			blockDecipherChan <- byte(bruteForceByteValue)
-			if byteNum == cfg.BlockSize {
-				close(blockDecipherChan)
+			decipheredBlockBytes[cfg.BlockSize-byteNum-1] = byte(bruteForceByteValue) // prepend the found byte
+			// tmp := XORBytes(searchBlock, cipherText)
+			// oracleIvBlock := XORBytes(tmp, padBlock)
+			tmp := XORBytes(decipheredBlockBytes, padBlock)
+
+			if byteNum != cfg.BlockSize {
+				decipheredBlockBytes = XORBytes(tmp, nextPadBlock)
 			}
-			return true
+			outchan <- decipheredBlockBytes
+			if byteNum == cfg.BlockSize {
+				close(outchan)
+			}
+			return
 		}
-		return false // This is to aid with detection of the final ciphertext's pad byte
+		return // This is to aid with detection of the final ciphertext's pad byte
 	}
 }
