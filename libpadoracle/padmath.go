@@ -193,7 +193,7 @@ func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
 	for _, b := range cipherTextChunks {
 		outBytes = append(outBytes, b...)
 	}
-	fmt.Println("Here is your ciphertext; supply this to the app:\n", hex.EncodeToString(outBytes))
+	fmt.Println("Here is your ciphertext; supply this to the app:\n", cfg.Pad.EncodePayload(outBytes))
 }
 
 // Encrypting works a little differently, and is dependent on the previous block being calculated, unlike decrypting :(. Paralleling this operation is likely not possible?
