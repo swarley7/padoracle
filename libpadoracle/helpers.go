@@ -172,7 +172,7 @@ type Out struct {
 }
 
 // BuildSearchBlock constructs a block of forged ciphertext that will be used to test the padding oracle
-func BuildSearchBlock(decipheredBlockBytes []byte, padByteValue int, blockSize int) (searchBlock []byte) {
+func BuildSearchBlock(decipheredBlockBytes []byte, padByteValue byte, blockSize int) (searchBlock []byte) {
 	searchBlock = append([]byte{byte(padByteValue)}, decipheredBlockBytes...)
 	maxLen := len(searchBlock)
 	for i := 0; i < blockSize-maxLen; i++ {

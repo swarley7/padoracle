@@ -1,6 +1,7 @@
 package libpadoracle
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"sync"
@@ -8,12 +9,21 @@ import (
 	"github.com/gosuri/uiprogress"
 )
 
-func GetRangeDataSafe() []int {
-	rangeData := []int{}
-	for i := 3; i < 256; i++ {
+func GetRangeDataSafe(pre []byte) []byte {
+	rangeData := []byte{}
+	rangeData = append(rangeData, pre...)
+	for _, v := range []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHJIKLMNOPQRSTUVWXYZ1234567890") {
+		if bytes.Contains(rangeData, []byte{v}) {
+			continue
+		}
+		rangeData = append(rangeData, v)
+	}
+	for i := byte(0); i <= 254; i++ {
+		if bytes.Contains(rangeData, []byte{i}) {
+			continue
+		}
 		rangeData = append(rangeData, i)
 	}
-	rangeData = append(rangeData, []int{0, 2, 1}...)
 	return rangeData
 }
 
@@ -66,7 +76,14 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	bar.AppendFunc(func(b *uiprogress.Bar) string {
 		return outData
 	})
-	rangeData := GetRangeDataSafe()
+	rangeData := GetRangeDataSafe([]byte{}) //slice of 'candidate' bytes
+	if blockNum == cfg.NumBlocks-1 {
+		pads := []byte{}
+		for p := byte(3); p < byte(cfg.BlockSize); p++ {
+			pads = append(pads, p)
+		}
+		rangeData = GetRangeDataSafe(pads)
+	}
 	blockDecipherChan := make(chan byte, 1)
 	returnData := Data{}
 	decipheredBlockBytes := []byte{}
@@ -114,7 +131,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 }
 
 // PerByteOperations performs the actual math on each byte of the CipherText
-func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipherChan chan byte, cfg Config, bruteForceByteValue int, byteNum int, blockNum int, blockData []byte, IV []byte, decipheredBlockBytes []byte, continueChan chan bool) bool {
+func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipherChan chan byte, cfg Config, bruteForceByteValue byte, byteNum int, blockNum int, blockData []byte, IV []byte, decipheredBlockBytes []byte, continueChan chan bool) bool {
 	defer func() {
 		<-threadCh // Release a thread once we're done with this goroutine
 	}()
@@ -201,7 +218,14 @@ func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plai
 	// threadCh := make(chan struct{}, cfg.Threads)
 	wg := sync.WaitGroup{}
 	var strData string
-	rangeData := GetRangeDataSafe()
+	rangeData := GetRangeDataSafe([]byte{}) //slice of 'candidate' bytes
+	if blockNum == cfg.NumBlocks-1 {
+		pads := []byte{}
+		for p := byte(3); p < byte(cfg.BlockSize); p++ {
+			pads = append(pads, p)
+		}
+		rangeData = GetRangeDataSafe(pads)
+	}
 	bar.PrependFunc(func(b *uiprogress.Bar) string {
 		return strData
 	})
@@ -233,7 +257,7 @@ func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plai
 }
 
 // PerByteOperations performs the actual math on each byte of the CipherText
-func PerByteOperationsEncrypt(wg *sync.WaitGroup, threadCh chan struct{}, outchan chan []byte, cfg Config, bruteForceByteValue int, byteNum int, blockNum int, cipherText []byte, decipheredBlockBytes []byte, continueChan chan bool) {
+func PerByteOperationsEncrypt(wg *sync.WaitGroup, threadCh chan struct{}, outchan chan []byte, cfg Config, bruteForceByteValue byte, byteNum int, blockNum int, cipherText []byte, decipheredBlockBytes []byte, continueChan chan bool) {
 	defer func() {
 		<-threadCh // Release a thread once we're done with this goroutine
 	}()
