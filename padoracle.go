@@ -16,10 +16,11 @@ import (
 )
 
 type testpad struct {
-	Data    string
-	URL     string
-	Method  string
-	Cookies string
+	Data     string
+	URL      string
+	Method   string
+	Cookies  string
+	ProxyURL string
 }
 
 var client = &http.Client{}
@@ -90,18 +91,20 @@ func main() {
 	var url string
 	var method string
 	var data string
+	var proxyUrl string
 	var cookies string
 
 	flag.StringVar(&cipherText, "c", "", "Provide the base ciphertext that you're trying to decipher (ripped straight from your request)")
 	flag.StringVar(&plainText, "p", "", "Provide the plaintext that you're trying to encrypt through exploitation of the padding oracle (for use with mode = 1)")
 	flag.StringVar(&iv, "iv", "", "Optional: provide the IV for Block 0 of your ciphertext (if the application has done Crypto bad, and treated the IV as secret)")
-	flag.StringVar(&cookies, "C", "", "Copy paste the cookies from your request in burp or whatever")
-
+	flag.StringVar(&cookies, "C", "", "Copy paste the cookies from your request in burp or whatever. E.g. \"cookie1=askldjf; cookie2=aaaaaaaaa; test=adfsdsfdf;\" Use the marker '<PADME>' to identify the injection point (note: will check GET and POST data)")
 	flag.IntVar(&cfg.BlockSize, "bs", 16, "Block size for the ciphertext. Common values are 8 (DES), 16 (AES)")
 	flag.IntVar(&cfg.Threads, "T", 100, "Number of threads to use for testing")
 	flag.IntVar(&cfg.Sleep, "S", 0, "Sleep x miliseconds between requests to be nice to the server")
 	flag.StringVar(&cfg.BlockRange, "blocks", "1,-1", "Optional: provide a range of blocks that are to be decrypted (useful for testing purposes). Note that the first value should always be '>=1'")
-	flag.StringVar(&url, "u", "", "The target URL. Use the marker '<PADME>' to identify the injection point (note: will libpadoracle.Check GET and POST data)")
+	flag.StringVar(&proxyUrl, "proxy", "", "Proxy to use for requests (if required)")
+
+	flag.StringVar(&url, "u", "", "The target URL. Use the marker '<PADME>' to identify the injection point (note: will check GET and POST data)")
 	flag.StringVar(&method, "method", "GET", "HTTP method to use (default GET)")
 	flag.StringVar(&data, "data", "", "Optional: POST data to supply with request")
 	flag.IntVar(&cfg.Mode, "m", 0, "0 = Decrypt; 1 = Encrypt. Note: Encryption through a padding oracle cannot be concurrently performed (as far as I can determine). A single thread is used in this mode.")
