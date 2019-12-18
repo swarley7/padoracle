@@ -142,7 +142,7 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 		var RawOracleData []byte
 		// Math here - all the XORing and building of weird padding happens in these routines
 		padBlock := BuildPaddingBlock(byteNum, cfg.BlockSize)
-		searchBlock := BuildSearchBlock(decipheredBlockBytes, bruteForceByteValue, cfg.BlockSize)
+		searchBlock := BuildSearchBlock(decipheredBlockBytes, int(bruteForceByteValue), cfg.BlockSize)
 		tmp := XORBytes(searchBlock, IV)
 		oracleIvBlock := XORBytes(tmp, padBlock)
 
