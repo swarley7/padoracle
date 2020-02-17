@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 
 	"encoding/hex"
 	"io/ioutil"
@@ -16,14 +17,12 @@ import (
 )
 
 type testpad struct {
-	Data     string
-	URL      string
-	Method   string
-	Cookies  string
-	ProxyURL string
+	Data    string
+	URL     string
+	Method  string
+	Cookies string
+	Client  *http.Client
 }
-
-var client = &http.Client{}
 
 // EncodePayload turns the raw oracle payload (IV + Ciphertext) into whatever format is required by the endpoint server. Modify this routine to suit the specific needs of the application.
 func (t testpad) EncodePayload(RawPadOraclePayload []byte) (encodedPayload string) {
@@ -58,12 +57,13 @@ func (t testpad) CallOracle(encodedPayload string) bool {
 	if !strings.Contains(t.URL, "<PADME>") && !strings.Contains(t.Data, "<PADME>") && !strings.Contains(t.Cookies, "<PADME>") {
 		panic("No marker supplied in URL or data")
 	}
+
 	req, err := http.NewRequest(t.Method, strings.Replace(t.URL, "<PADME>", encodedPayload, -1), strings.NewReader(strings.Replace(t.Data, "<PADME>", encodedPayload, -1)))
 	libpadoracle.Check(err)
 
 	// Set cookie
 	req.Header.Set("Cookie", strings.Replace(t.Cookies, "<PADME>", encodedPayload, -1))
-	resp, err := client.Do(req)
+	resp, err := t.Client.Do(req)
 	libpadoracle.Check(err)
 	defer resp.Body.Close() // Return the response data back to the caller
 
@@ -88,7 +88,7 @@ func main() {
 	var cipherText string
 	var plainText string
 	var iv string
-	var url string
+	var Url string
 	var method string
 	var data string
 	var proxyUrl string
@@ -104,14 +104,14 @@ func main() {
 	flag.StringVar(&cfg.BlockRange, "blocks", "1,-1", "Optional: provide a range of blocks that are to be decrypted (useful for testing purposes). Note that the first value should always be '>=1'")
 	flag.StringVar(&proxyUrl, "proxy", "", "Proxy to use for requests (if required)")
 
-	flag.StringVar(&url, "u", "", "The target URL. Use the marker '<PADME>' to identify the injection point (note: will check GET and POST data)")
+	flag.StringVar(&Url, "u", "", "The target URL. Use the marker '<PADME>' to identify the injection point (note: will check GET and POST data)")
 	flag.StringVar(&method, "method", "GET", "HTTP method to use (default GET)")
 	flag.StringVar(&data, "data", "", "Optional: POST data to supply with request")
 	flag.IntVar(&cfg.Mode, "m", 0, "0 = Decrypt; 1 = Encrypt. Note: Encryption through a padding oracle cannot be concurrently performed (as far as I can determine). A single thread is used in this mode.")
 	flag.BoolVar(&cfg.Debug, "d", false, "Debug mode")
 
 	flag.Parse()
-	if url == "" {
+	if Url == "" {
 		log.Fatal("No URL supplied.")
 	}
 	if cfg.Debug {
@@ -120,7 +120,16 @@ func main() {
 			http.ListenAndServe("localhost:6060", nil)
 		}()
 	}
-	cfg.Pad = testpad{URL: url, Method: method, Data: data}
+	client := &http.Client{}
+
+	if proxyUrl != "" {
+		pURL, err := url.Parse(proxyUrl)
+		if err != nil {
+			log.Fatal("Busted ProxyURL...", proxyUrl)
+		}
+		client.Transport = &http.Transport{Proxy: http.ProxyURL(pURL)}
+	}
+	cfg.Pad = testpad{URL: Url, Method: method, Data: data, Client: client}
 	cfg.TargetPlaintext = []byte(plainText)
 	cfg.BaseCiphertext = cfg.Pad.DecodeCiphertextPayload(cipherText)
 	if iv != "" {
