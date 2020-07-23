@@ -18,13 +18,13 @@ func GetRangeDataSafe(pre []byte) []byte {
 		}
 		rangeData = append(rangeData, v)
 	}
-	for i := byte(0); i <= 254; i++ {
+	for i := byte(0); i <= 253; i++ {
 		if bytes.Contains(rangeData, []byte{i}) {
 			continue
 		}
 		rangeData = append(rangeData, i)
 	}
-	rangeData = append([]byte{0xff}, rangeData...)
+	rangeData = append([]byte{0xff, 0xfe}, rangeData...)
 	return rangeData
 }
 
