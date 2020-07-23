@@ -24,6 +24,7 @@ func GetRangeDataSafe(pre []byte) []byte {
 		}
 		rangeData = append(rangeData, i)
 	}
+	rangeData = append([]byte{0xff}, rangeData...)
 	return rangeData
 }
 
