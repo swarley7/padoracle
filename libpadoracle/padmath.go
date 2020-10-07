@@ -235,7 +235,7 @@ func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plai
 		return strData
 	})
 	decipheredBlockBytes := GenerateFullSlice(0x00, cfg.BlockSize)
-	outchan := make(chan []byte)
+	outchan := make(chan []byte, 1)
 	// Iterate through each byte in the block
 	for byteNum, _ := range plaintText { // Iterate over each byte
 		// Iterate over each possible byte value to determine which one doesn't cause a padding error
