@@ -18,13 +18,16 @@ func GetRangeDataSafe(pre []byte) []byte {
 		}
 		rangeData = append(rangeData, v)
 	}
-	for i := byte(0); i <= 253; i++ {
+	for i := byte(2); i <= 253; i++ {
 		if bytes.Contains(rangeData, []byte{i}) {
 			continue
 		}
 		rangeData = append(rangeData, i)
 	}
-	rangeData = append([]byte{0xff, 0xfe}, rangeData...)
+	// Deprioritise possible FPs
+	rangeData = append(rangeData, []byte{0xff, 0xfe, 0x02, 0x01, 0x00}...)
+	// rand.Seed(time.Now().UnixNano())
+	// rand.Shuffle(len(rangeData), func(i, j int) { rangeData[i], rangeData[j] = rangeData[j], rangeData[i] })
 	return rangeData
 }
 
@@ -104,6 +107,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 				// 	// Additionally, there's a 1/256 chance that 0x02 will be valid
 				// 	// The probability of each successive value is exponential, so we can probably assume it's not likely
 				found = PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes, continueChan)
+
 			} else {
 				go PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes, continueChan)
 			}
