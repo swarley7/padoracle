@@ -103,8 +103,9 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 
 		// var found bool
 		// Iterate through each possible byte value until padding error goes away
+		wg2.Add(1)
+
 		for {
-			wg2.Add(1)
 
 			if len(rangeData) == 0 {
 				log.Panic("Um you have no more bytes to test here. Something is broken :(")
@@ -139,8 +140,8 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 					rangeData = bytes.ReplaceAll(rangeData, []byte{foundCipherByte}, []byte{})
 					if cfg.Debug {
 						log.Println("banning byte: ", foundCipherByte, nextByte)
-						blockDecipherChan = make(chan []byte, 1)
-
+						wg2.Add(1)
+						// blockDecipherChan = make(chan []byte, 1)
 					}
 					continue
 				}
