@@ -95,16 +95,16 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
 	var nextByte byte
+	blockDecipherChan := make(chan []byte, 1)
 
 	for byteNum, _ := range blockData { // Iterate over each byte
-		blockDecipherChan := make(chan []byte, 1)
 
 		continueChan := make(chan bool, 1)
 
-		wg2.Add(1)
 		// var found bool
 		// Iterate through each possible byte value until padding error goes away
 		for {
+			wg2.Add(1)
 
 			if len(rangeData) == 0 {
 				log.Panic("Um you have no more bytes to test here. Something is broken :(")
@@ -139,6 +139,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 					rangeData = bytes.ReplaceAll(rangeData, []byte{foundCipherByte}, []byte{})
 					if cfg.Debug {
 						log.Println("banning byte: ", foundCipherByte, nextByte)
+						blockDecipherChan = make(chan []byte, 1)
 
 					}
 					continue
@@ -190,9 +191,9 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 			continueChan <- true
 			close(continueChan)
 			blockDecipherChan <- []byte{byte(bruteForceByteValue), byte(bruteForceByteValue)}
-			if byteNum == cfg.BlockSize {
-				close(blockDecipherChan)
-			}
+			// if byteNum == cfg.BlockSize {
+			// 	close(blockDecipherChan)
+			// }
 			return true
 		}
 		return false // This is to aid with detection of the final ciphertext's pad byte
