@@ -2,7 +2,7 @@
 An extensible framework for exploiting padding oracles in network-based applications.
 
 ## Background
-A padding oracle occurs in a cryptosystem where something (the oracle) reveals information about the legiticamy of padded ciphertext. In cipher block chaining (CBC) mode, the IV is typically the first block of the ciphertext (or might be kept secret for "reasons"). The ciphertext of the preceeding block forms the IV of the current block.
+A padding oracle occurs in a cryptosystem where something (the oracle) reveals information about the legitimacy of padded ciphertext. In cipher block chaining (CBC) mode, the IV is typically the first block of the ciphertext (or might be kept secret for "reasons"). The ciphertext of the preceeding block forms the IV of the current block.
 
 Since block ciphers require equal length ciphertext blocks, the final block of plaintext must be padded out to meet the required blocksize. Typical padding modes include PKCS5 and PKCS7 - both of which are pretty much identical, except PKCS5 is used for 8 byte blocks, whereas PKCS7 can be used for `n < 256` byte block sizes. Both modes basically use the last byte of cleartext to denote how many bytes of padding are included within the block.
 
