@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"sync"
 
 	"unicode"
@@ -94,17 +95,23 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	returnData := Data{}
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
-	var byteNum int
 	var nextByte byte
 
-	for {
-		for byteNum, _ := range blockData { // Iterate over each byte
-			continueChan := make(chan bool, 1)
+	for byteNum, _ := range blockData { // Iterate over each byte
 
-			wg2.Add(1)
-			// var found bool
-			// Iterate through each possible byte value until padding error goes away
+		continueChan := make(chan bool, 1)
+
+		wg2.Add(1)
+		// var found bool
+		// Iterate through each possible byte value until padding error goes away
+		for {
+			if len(rangeData) == 0 {
+				log.Panic("Um you have no more bytes to test here. Something is broken :(")
+			}
 			for _, i := range rangeData {
+				if cfg.Debug {
+					log.Printf("Debug stats: current block [%d] | bytesToTest [%v]", blockNum, rangeData)
+				}
 				var found bool = false
 				strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), y.Sprintf("%02x", i), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)))
 				threadCh <- struct{}{}
@@ -124,9 +131,10 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 			retBytes := <-blockDecipherChan // should be []byte{input, output}
 			foundCipherByte := retBytes[0]
 			nextByte := retBytes[1]
-			if cfg.AsciiMode && blockNum != 0 { // this should prevent it crapping out when it hits the IV block (which is gouing to be garbage)
+			if cfg.AsciiMode && blockNum != 0 { // this should prevent it crapping out when it hits the IV block (which is going to be garbage)
 				if !unicode.IsPrint(rune(nextByte)) {
 					rangeData = bytes.ReplaceAll(rangeData, []byte{foundCipherByte}, []byte{})
+					blockDecipherChan = make(chan []byte, 1) // reset chan
 					continue
 				}
 				break

