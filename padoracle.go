@@ -103,6 +103,8 @@ func main() {
 	var cookies string
 	var ignoreTls bool
 
+	var binaryMode bool
+
 	flag.StringVar(&cipherText, "c", "", "Provide the base ciphertext that you're trying to decipher (ripped straight from your request)")
 	flag.StringVar(&plainText, "p", "", "Provide the plaintext that you're trying to encrypt through exploitation of the padding oracle (for use with mode = 1)")
 	flag.StringVar(&iv, "iv", "", "Optional: provide the IV for Block 0 of your ciphertext (if the application has done Crypto bad, and treated the IV as secret)")
@@ -119,7 +121,7 @@ func main() {
 	flag.IntVar(&cfg.Mode, "m", 0, "0 = Decrypt; 1 = Encrypt. Note: Encryption through a padding oracle cannot be concurrently performed (as far as I can determine). A single thread is used in this mode.")
 	flag.BoolVar(&cfg.Debug, "d", false, "Debug mode")
 
-	flag.BoolVar(&cfg.Debug, "binary", false, "Binary mode (default is to expect the resultant plaintext to be ASCII printable chars) - set to `true` if you're dealing with bin data or unicode emojiz")
+	flag.BoolVar(&binaryMode, "binary", false, "Binary mode (default is to expect the resultant plaintext to be ASCII printable chars) - set to `true` if you're dealing with bin data or unicode emojiz")
 	flag.BoolVar(&ignoreTls, "k", true, "Nobody cares about TLS certificate errors, but maybe you do?")
 
 	flag.Parse()
@@ -146,6 +148,10 @@ func main() {
 	cfg.Pad = testpad{URL: Url, Method: method, Data: data, Client: client}
 	cfg.TargetPlaintext = []byte(plainText)
 	cfg.BaseCiphertext = cfg.Pad.DecodeCiphertextPayload(cipherText)
+	cfg.AsciiMode = true
+	if binaryMode {
+		cfg.AsciiMode = false
+	}
 	if iv != "" {
 		cfg.IV = cfg.Pad.DecodeIV(iv)
 	}
