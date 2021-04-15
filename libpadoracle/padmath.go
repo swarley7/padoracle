@@ -91,13 +91,13 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 		}
 		rangeData = GetRangeDataSafe(pads)
 	}
-	blockDecipherChan := make(chan []byte, 1)
 	returnData := Data{}
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
 	var nextByte byte
 
 	for byteNum, _ := range blockData { // Iterate over each byte
+		blockDecipherChan := make(chan []byte, 1)
 
 		continueChan := make(chan bool, 1)
 
@@ -105,6 +105,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 		// var found bool
 		// Iterate through each possible byte value until padding error goes away
 		for {
+
 			if len(rangeData) == 0 {
 				log.Panic("Um you have no more bytes to test here. Something is broken :(")
 			}
@@ -129,12 +130,17 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 				}
 			}
 			retBytes := <-blockDecipherChan // should be []byte{input, output}
+
 			foundCipherByte := retBytes[0]
 			nextByte := retBytes[1]
+
 			if cfg.AsciiMode && blockNum != 0 { // this should prevent it crapping out when it hits the IV block (which is going to be garbage)
 				if !unicode.IsPrint(rune(nextByte)) {
 					rangeData = bytes.ReplaceAll(rangeData, []byte{foundCipherByte}, []byte{})
-					blockDecipherChan = make(chan []byte, 1) // reset chan
+					if cfg.Debug {
+						log.Println("banning byte: ", foundCipherByte, nextByte)
+
+					}
 					continue
 				}
 				break
