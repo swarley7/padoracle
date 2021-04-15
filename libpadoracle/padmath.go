@@ -134,7 +134,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 			foundCipherByte := retBytes[0]
 			nextByte := retBytes[1]
 
-			if cfg.AsciiMode && blockNum != 0 { // this should prevent it crapping out when it hits the IV block (which is going to be garbage)
+			if cfg.AsciiMode && (blockNum != 0 || blockNum != cfg.NumBlocks-1) { // this should prevent it crapping out when it hits the IV block (which is going to be garbage)
 				if !unicode.IsPrint(rune(nextByte)) {
 					rangeData = bytes.ReplaceAll(rangeData, []byte{foundCipherByte}, []byte{})
 					if cfg.Debug {
