@@ -72,6 +72,7 @@ type Config struct {
 	IV              []byte
 	BaseCiphertext  []byte
 	TargetPlaintext []byte
+	AsciiMode       bool
 	BlockSize       int
 	Algorithm       string
 	Threads         int

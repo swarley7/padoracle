@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"unicode"
+
 	"github.com/gosuri/uiprogress"
 )
 
@@ -25,7 +27,7 @@ func GetRangeDataSafe(pre []byte) []byte {
 		rangeData = append(rangeData, i)
 	}
 	// Deprioritise possible FPs
-	rangeData = append(rangeData, []byte{0xff, 0xfe, 0x02, 0x01, 0x00}...)
+	rangeData = append(rangeData, []byte{0xff, 0xfe, 0x01, 0x00}...)
 	// rand.Seed(time.Now().UnixNano())
 	// rand.Shuffle(len(rangeData), func(i, j int) { rangeData[i], rangeData[j] = rangeData[j], rangeData[i] })
 	return rangeData
@@ -88,36 +90,49 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 		}
 		rangeData = GetRangeDataSafe(pads)
 	}
-	blockDecipherChan := make(chan byte, 1)
+	blockDecipherChan := make(chan []byte, 1)
 	returnData := Data{}
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
-	for byteNum, _ := range blockData { // Iterate over each byte
-		continueChan := make(chan bool, 1)
+	var byteNum int
+	var nextByte byte
 
-		wg2.Add(1)
-		// var found bool
-		// Iterate through each possible byte value until padding error goes away
-		for _, i := range rangeData {
-			var found bool = false
-			strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), y.Sprintf("%02x", i), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)))
-			threadCh <- struct{}{}
-			if blockNum == cfg.NumBlocks-1 && byteNum == 0 { // Edge case for the VERY LAST byte of ciphertext;
-				// 	// this one will ALWAYS allow 0x01 to be valid (as 1 byte of padding in the final block is always a valid value)
-				// 	// Additionally, there's a 1/256 chance that 0x02 will be valid
-				// 	// The probability of each successive value is exponential, so we can probably assume it's not likely
-				found = PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes, continueChan)
+	for {
+		for byteNum, _ := range blockData { // Iterate over each byte
+			continueChan := make(chan bool, 1)
 
-			} else {
-				go PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes, continueChan)
+			wg2.Add(1)
+			// var found bool
+			// Iterate through each possible byte value until padding error goes away
+			for _, i := range rangeData {
+				var found bool = false
+				strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), y.Sprintf("%02x", i), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)))
+				threadCh <- struct{}{}
+				if blockNum == cfg.NumBlocks-1 && byteNum == 0 { // Edge case for the VERY LAST byte of ciphertext;
+					// 	// this one will ALWAYS allow 0x01 to be valid (as 1 byte of padding in the final block is always a valid value)
+					// 	// Additionally, there's a 1/256 chance that 0x02 will be valid
+					// 	// The probability of each successive value is exponential, so we can probably assume it's not likely
+					found = PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes, continueChan)
+
+				} else {
+					go PerByteOperations(&wg2, threadCh, blockDecipherChan, cfg, i, byteNum, blockNum, blockData, iv, decipheredBlockBytes, continueChan)
+				}
+				if found {
+					break
+				}
 			}
-			if found {
+			retBytes := <-blockDecipherChan // should be []byte{input, output}
+			foundCipherByte := retBytes[0]
+			nextByte := retBytes[1]
+			if cfg.AsciiMode && blockNum != 0 { // this should prevent it crapping out when it hits the IV block (which is gouing to be garbage)
+				if !unicode.IsPrint(rune(nextByte)) {
+					rangeData = bytes.ReplaceAll(rangeData, []byte{foundCipherByte}, []byte{})
+					continue
+				}
 				break
 			}
 		}
-		nextByte := <-blockDecipherChan
 		strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), r.Sprintf("%02x", nextByte), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)))
-
 		decipheredBlockBytes = append([]byte{nextByte}, decipheredBlockBytes...)
 		bar.Incr()
 		wg2.Wait()
@@ -136,7 +151,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 }
 
 // PerByteOperations performs the actual math on each byte of the CipherText
-func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipherChan chan byte, cfg Config, bruteForceByteValue byte, byteNum int, blockNum int, blockData []byte, IV []byte, decipheredBlockBytes []byte, continueChan chan bool) bool {
+func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipherChan chan []byte, cfg Config, bruteForceByteValue byte, byteNum int, blockNum int, blockData []byte, IV []byte, decipheredBlockBytes []byte, continueChan chan bool) bool {
 	defer func() {
 		<-threadCh // Release a thread once we're done with this goroutine
 	}()
@@ -160,7 +175,7 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 			defer wg.Done()
 			continueChan <- true
 			close(continueChan)
-			blockDecipherChan <- byte(bruteForceByteValue)
+			blockDecipherChan <- []byte{byte(bruteForceByteValue), byte(bruteForceByteValue)}
 			if byteNum == cfg.BlockSize {
 				close(blockDecipherChan)
 			}
