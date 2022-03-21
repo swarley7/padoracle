@@ -35,6 +35,7 @@ type testpad struct {
 	Method  string
 	Cookies string
 	Client  *http.Client
+	Headers string
 }
 
 const (
@@ -82,10 +83,10 @@ func (t testpad) CallOracle(encodedPayload string) bool {
 
 	// Set cookie
 	req.Header.Set("Cookie", strings.Replace(t.Cookies, "<PADME>", encodedPayload, -1))
-	for _, i := range strings.Split(t.headers, ";;") {
+	for _, i := range strings.Split(t.Headers, ";;") {
 		if len(i) > 0 {
-			kv := strings.Cut(i, ":")
-			req.Header.Set(strings.Replace(kv[0], "<PADME>", encodedPayload, -1), strings.Replace(kv[1], "<PADME>", encodedPayload, -1))
+			k, v, _ := strings.Cut(i, ":")
+			req.Header.Set(strings.Replace(k, "<PADME>", encodedPayload, -1), strings.Replace(v, "<PADME>", encodedPayload, -1))
 		}
 	}
 	resp, err := t.Client.Do(req)
@@ -119,7 +120,7 @@ func main() {
 	var proxyUrl string
 	var cookies string
 	var ignoreTls bool
-	var headers []string
+	var headers string
 
 	var binaryMode bool
 
@@ -164,7 +165,7 @@ func main() {
 		}
 		client.Transport = &http.Transport{Proxy: http.ProxyURL(pURL), TLSClientConfig: &tls.Config{InsecureSkipVerify: ignoreTls}}
 	}
-	cfg.Pad = testpad{URL: Url, Method: method, Data: data, Client: client}
+	cfg.Pad = testpad{URL: Url, Method: method, Data: data, Client: client, Headers: headers, Cookies: cookies}
 	cfg.TargetPlaintext = []byte(plainText)
 	cfg.BaseCiphertext = cfg.Pad.DecodeCiphertextPayload(cipherText)
 	cfg.AsciiMode = true
