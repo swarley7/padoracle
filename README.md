@@ -28,7 +28,7 @@ First thing's first; clone the repo.
 
 Next, install the dependencies (hopefully there's no errors):
 
-`go get -u`
+`go build`
 
 Next comes the hard part (it's not that hard really). Open `./libpadoracle/modifyme.go` in your favourite editor and get modifying!
 
