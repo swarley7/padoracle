@@ -85,8 +85,8 @@ func (t testpad) CallOracle(encodedPayload string) bool {
 	req.Header.Set("Cookie", strings.Replace(t.Cookies, "<PADME>", encodedPayload, -1))
 	for _, i := range strings.Split(t.Headers, ";;") {
 		if len(i) > 0 {
-			k, v, _ := strings.Cut(i, ":")
-			req.Header.Set(strings.Replace(k, "<PADME>", encodedPayload, -1), strings.Replace(v, "<PADME>", encodedPayload, -1))
+			kv := strings.SplitN(i, ":", 1)
+			req.Header.Set(strings.Replace(kv[0], "<PADME>", encodedPayload, -1), strings.Replace(kv[1], "<PADME>", encodedPayload, -1))
 		}
 	}
 	resp, err := t.Client.Do(req)
