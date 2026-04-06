@@ -8,7 +8,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	mrand "math/rand"
 	"net/http"
+	"time"
 )
 
 var cryptoKey []byte
@@ -16,6 +18,8 @@ var IV []byte
 var BS int
 var host string
 var port int
+var sleepMs int
+var jitterPct int
 
 // func PKCS7(arr []byte, blocksize int) []byte {
 // 	rem := blocksize - (len(arr) % blocksize)
@@ -68,7 +72,7 @@ func PKCS7(data []byte, blockSize int) ([]byte, error) {
 	if blockSize < 0 || blockSize > 256 {
 		return nil, fmt.Errorf("pkcs7: Invalid block size %d", blockSize)
 	} else {
-		padLen := 16 - len(data)%blockSize
+		padLen := blockSize - len(data)%blockSize
 		padding := bytes.Repeat([]byte{byte(padLen)}, padLen)
 		return append(data, padding...), nil
 	}
@@ -137,7 +141,11 @@ func main() {
 	flag.StringVar(&iv, "i", "", "Optional IV (blocksize length bytes in ASCII-Hex notation)")
 	flag.StringVar(&stringKey, "k", "YELLOW SUBMARINE", "Key value for encryption / decryption")
 	flag.IntVar(&bs, "bs", 16, "Blocksize for the encryption / decryption. Common values are 8 or 16 (default).")
+	flag.IntVar(&sleepMs, "sleep", 0, "Sleep time in milliseconds to simulate network latency")
+	flag.IntVar(&jitterPct, "jitter", 0, "Jitter percentage to apply to sleep time (0-100)")
 	flag.Parse()
+
+	mrand.Seed(time.Now().UnixNano())
 
 	BS = bs
 	cryptoKey = []byte(stringKey)
@@ -148,6 +156,18 @@ func main() {
 }
 
 func VulnServer(w http.ResponseWriter, r *http.Request) {
+	if sleepMs > 0 {
+		delay := float64(sleepMs)
+		if jitterPct > 0 {
+			j := (delay * float64(jitterPct)) / 100.0
+			offset := (mrand.Float64() * 2 * j) - j
+			delay += offset
+		}
+		if delay > 0 {
+			time.Sleep(time.Duration(delay) * time.Millisecond)
+		}
+	}
+
 	ciphertext, ok := r.URL.Query()["vuln"]
 	if !ok {
 		data, err := PKCS7([]byte("This is a test for validating a padding oracle, see what you think?"), BS)

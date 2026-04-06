@@ -134,7 +134,7 @@ func TestEndToEndEncrypt(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	plaintext := []byte("secret message encrypt")
+	plaintext := []byte("secret message encrypt with multiple blocks 1337")
 
 	cfg := Config{
 		Mode:            MODE_ENCRYPT,
@@ -155,7 +155,7 @@ func TestEndToEndEncrypt(t *testing.T) {
 	select {
 	case <-done:
 		// success
-	case <-time.After(30 * time.Second):
+	case <-time.After(60 * time.Second):
 		t.Fatal("Run(cfg) encrypt took too long")
 	}
 }
