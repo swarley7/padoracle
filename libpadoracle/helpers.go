@@ -23,14 +23,30 @@ type pad interface {
 }
 
 // Get yo colours sorted
-var g = color.New(color.FgGreen)
+var g = color.New(color.FgHiGreen)
+var gb = color.New(color.FgHiGreen, color.Bold)
+var y = color.New(color.FgHiYellow, color.Bold)
+var r = color.New(color.FgHiRed, color.Bold)
+var m = color.New(color.FgHiMagenta, color.Bold)
+var b = color.New(color.FgHiBlue)
+var bb = color.New(color.FgHiBlue, color.Bold)
+var cyan = color.New(color.FgHiCyan)
+var white = color.New(color.FgHiWhite, color.Bold)
 
-var gb = color.New(color.FgGreen, color.Bold)
-var y = color.New(color.FgYellow, color.Bold)
-var r = color.New(color.FgRed, color.Bold)
-var m = color.New(color.FgMagenta, color.Bold)
-var b = color.New(color.FgBlue)
-var bb = color.New(color.FgBlue, color.Bold)
+func Banner() {
+	fmt.Println(gb.Sprint(`
+   ▄███████▄   ▄██████▄  ████████▄   ▄██████▄   ▄██████▄   ▄██████▄   ▄██████▄   ▄█          ▄████████ 
+  ███    ███  ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███         ███    ███ 
+  ███    ███  ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███         ███    █▀  
+  ███    ███  ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███        ▄███▄▄▄     
+▀█████████▀   ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███       ▀▀███▀▀▀     
+  ███         ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███         ███    █▄  
+  ███         ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███    ███ ███▌    ▄   ███    ███ 
+ ▄████▀        ▀██████▀  ████████▀   ▀██████▀   ▀██████▀   ▀██████▀   ▀██████▀  █████▄▄██   ██████████ 
+                                                                                ▀                 
+`))
+	fmt.Println(white.Sprint(" [ Modern, Fast, Concurrent Padding Oracle Exploit Toolkit ]\n"))
+}
 
 func Reverse(s string) string {
 	var reverse string
@@ -51,7 +67,7 @@ func PKCS7(data []byte, blockSize int) ([]byte, error) {
 	if blockSize < 0 || blockSize > 256 {
 		return nil, fmt.Errorf("pkcs7: Invalid block size %d", blockSize)
 	} else {
-		padLen := 16 - len(data)%blockSize
+		padLen := blockSize - len(data)%blockSize
 		padding := bytes.Repeat([]byte{byte(padLen)}, padLen)
 		return append(data, padding...), nil
 	}
@@ -80,7 +96,7 @@ type Config struct {
 	Sleep           int
 	BlockRange      string
 	Writer          chan WriteData
-	MetricsChan     chan int
+	NumRequests     *uint64
 	Statistics      Stats
 	Pad             pad
 }
