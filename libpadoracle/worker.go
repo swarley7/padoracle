@@ -12,6 +12,7 @@ import (
 
 var uiMutex sync.Mutex
 var uiRunning bool
+var uiOnce sync.Once
 
 func Run(cfg Config) {
 	Banner()
@@ -26,12 +27,9 @@ func Run(cfg Config) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	uiMutex.Lock()
-	if !uiRunning {
+	uiOnce.Do(func() {
 		uiprogress.Start()
-		uiRunning = true
-	}
-	uiMutex.Unlock()
+	})
 
 	if cfg.Mode == MODE_DECRYPT {
 		fmt.Printf(" [+] Mode: %v | Block Size: %v | Threads: %v\n", y.Sprint("DECRYPT"), cfg.BlockSize, cfg.Threads)

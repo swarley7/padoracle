@@ -9,6 +9,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
+	"time"
 
 	"io/ioutil"
 	"strings"
@@ -39,11 +40,14 @@ type testpad struct {
 }
 
 const (
-	MaxIdleConnections int = 20
+	MaxIdleConnections int = 100
 	RequestTimeout     int = 5
 )
 
-var DefaultDialer = &net.Dialer{}
+var DefaultDialer = &net.Dialer{
+	Timeout:   30 * time.Second,
+	KeepAlive: 30 * time.Second,
+}
 
 // EncodePayload turns the raw oracle payload (IV + Ciphertext) into whatever format is required by the endpoint server. Modify this routine to suit the specific needs of the application.
 func (t testpad) EncodePayload(RawPadOraclePayload []byte) (encodedPayload string) {
@@ -73,37 +77,44 @@ type Resp struct {
 	BodyData     string
 }
 
-// CallOracle actually makes the HTTP/whatever request to the server that provides the padding oracle and returns bool: true = padding was CORRECT/VALID; false = padding was INCORRECT/INVALID. Modify this to suit your application's needs.
+// CallOracle actually makes the HTTP/whatever request to the server...
 func (t testpad) CallOracle(encodedPayload string) bool {
 	if !strings.Contains(t.URL, "<PADME>") && !strings.Contains(t.Data, "<PADME>") && !strings.Contains(t.Cookies, "<PADME>") {
 		panic("No marker supplied in URL or data")
 	}
 	req, err := http.NewRequest(t.Method, strings.Replace(t.URL, "<PADME>", encodedPayload, -1), strings.NewReader(strings.Replace(t.Data, "<PADME>", encodedPayload, -1)))
-	libpadoracle.Check(err)
+	if err != nil {
+		return false
+	}
 
 	// Set cookie
 	req.Header.Set("Cookie", strings.Replace(t.Cookies, "<PADME>", encodedPayload, -1))
 	for _, i := range strings.Split(t.Headers, ";;") {
 		if len(i) > 0 {
-			kv := strings.SplitN(i, ":", 1)
-			req.Header.Set(strings.Replace(kv[0], "<PADME>", encodedPayload, -1), strings.Replace(kv[1], "<PADME>", encodedPayload, -1))
+			kv := strings.SplitN(i, ":", 2) // Fix: use 2 to get key and value correctly
+			if len(kv) == 2 {
+				req.Header.Set(strings.Replace(kv[0], "<PADME>", encodedPayload, -1), strings.Replace(kv[1], "<PADME>", encodedPayload, -1))
+			}
 		}
 	}
 	resp, err := t.Client.Do(req)
-	libpadoracle.Check(err)
-	defer resp.Body.Close() // Return the response data back to the caller
+	if err != nil {
+		log.Printf(" [!] Network Error: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	libpadoracle.Check(err)
+	if err != nil {
+		return false
+	}
 	return t.CheckResponse(Resp{ResponseCode: resp.StatusCode, BodyData: string(bodyBytes)})
 }
 
 // CheckResponse tells the program whether the padding was invalid or not. Modify to suit the application's response when invalid padding is detected.
 func (t testpad) CheckResponse(resp Resp) bool {
-	// Sample - the server's response includes the string "not padded correctly"
-	// matched, _ := regexp.MatchString(`not padded correctly`, resp.BodyData)
-	// fmt.Println(matched, err)
-	if strings.Contains(resp.BodyData, "Error occurred during a cryptographic operation.") {
+	// The example server returns "pkcs7: Invalid padding" and a 500 error code
+	if strings.Contains(resp.BodyData, "pkcs7: Invalid padding") || resp.ResponseCode != 200 {
 		return false
 	}
 	return true

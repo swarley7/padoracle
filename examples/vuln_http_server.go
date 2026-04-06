@@ -143,6 +143,7 @@ func main() {
 	cryptoKey = []byte(stringKey)
 	IV = []byte{1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}
 	http.HandleFunc("/", VulnServer)
+	fmt.Printf(" [!] Vulnerable HTTP Padding Oracle Server listening on %s:%d\n", host, port)
 	http.ListenAndServe(fmt.Sprintf("%s:%d", host, port), nil)
 }
 
@@ -160,8 +161,6 @@ func VulnServer(w http.ResponseWriter, r *http.Request) {
 	}
 	ct, err := hex.DecodeString(ciphertext[0])
 	if err != nil {
-		fmt.Println(r.URL.RequestURI())
-
 		w.WriteHeader(500)
 		fmt.Fprintf(w, "The vuln paramter value was incorrectly formatted and not valid ASCII-Hex\nPlease check\n\n(Note: this is not a marker for a valid padding oracle vulnerability; your input is well fucked).")
 		return
@@ -169,11 +168,9 @@ func VulnServer(w http.ResponseWriter, r *http.Request) {
 	pt, err := UnPKCS7(DecryptAesCbc(ct, cryptoKey, []byte{}, BS), BS)
 	if err != nil {
 		w.WriteHeader(500)
-		// fmt.Println(r.URL.RequestURI())
 		fmt.Fprintf(w, "%s", err)
 		return
 	}
 	fmt.Fprintf(w, "The decrypted plaintext is:\n\n%s", pt)
-	fmt.Printf("The decrypted plaintext is:\n\n%s", pt)
 	return
 }

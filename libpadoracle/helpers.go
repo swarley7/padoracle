@@ -114,7 +114,13 @@ type Data struct {
 }
 
 func Unpad(b []byte) (o []byte) {
+	if len(b) == 0 {
+		return b
+	}
 	padVal := int(b[len(b)-1])
+	if padVal > len(b) || padVal <= 0 {
+		return b
+	}
 	for i := 0; i < len(b)-padVal; i++ {
 		o = append(o, b[i])
 	}
