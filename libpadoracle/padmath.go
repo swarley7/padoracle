@@ -14,54 +14,53 @@ import (
 	"github.com/gosuri/uiprogress"
 )
 
-var (
-	standardRange []byte
-	paddedRange   []byte
-	rangeOnce     sync.Once
-)
-
-func initRanges(blockSize int) {
-	rangeOnce.Do(func() {
-		seen := make(map[byte]bool)
-		// Alphanumerics first
-		for _, v := range []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890") {
-			standardRange = append(standardRange, v)
-			seen[v] = true
-		}
-		deprioritized := map[byte]bool{0xff: true, 0xfe: true, 0x01: true, 0x00: true}
-		for i := 0; i < 256; i++ {
-			b := byte(i)
-			if !seen[b] && !deprioritized[b] {
-				standardRange = append(standardRange, b)
-				seen[b] = true
-			}
-		}
-		for _, b := range []byte{0xff, 0xfe, 0x01, 0x00} {
-			if !seen[b] {
-				standardRange = append(standardRange, b)
-			}
-		}
-
-		// Padded range for the last block
-		paddedSeen := make(map[byte]bool)
-		for p := byte(3); p < byte(blockSize); p++ {
-			paddedRange = append(paddedRange, p)
-			paddedSeen[p] = true
-		}
-		for _, b := range standardRange {
-			if !paddedSeen[b] {
-				paddedRange = append(paddedRange, b)
-			}
-		}
-	})
+type Engine struct {
+	Config        *Config
+	StandardRange []byte
+	PaddedRange   []byte
 }
 
-func GetRangeDataSafe(isLastBlock bool, blockSize int) []byte {
-	initRanges(blockSize)
-	if isLastBlock {
-		return paddedRange
+func NewEngine(cfg *Config) *Engine {
+	e := &Engine{Config: cfg}
+	seen := make(map[byte]bool)
+	// Alphanumerics first
+	for _, v := range []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890") {
+		e.StandardRange = append(e.StandardRange, v)
+		seen[v] = true
 	}
-	return standardRange
+	deprioritized := map[byte]bool{0xff: true, 0xfe: true, 0x01: true, 0x00: true}
+	for i := 0; i < 256; i++ {
+		b := byte(i)
+		if !seen[b] && !deprioritized[b] {
+			e.StandardRange = append(e.StandardRange, b)
+			seen[b] = true
+		}
+	}
+	for _, b := range []byte{0xff, 0xfe, 0x01, 0x00} {
+		if !seen[b] {
+			e.StandardRange = append(e.StandardRange, b)
+		}
+	}
+
+	// Padded range for the last block
+	paddedSeen := make(map[byte]bool)
+	for p := byte(3); p < byte(cfg.BlockSize); p++ {
+		e.PaddedRange = append(e.PaddedRange, p)
+		paddedSeen[p] = true
+	}
+	for _, b := range e.StandardRange {
+		if !paddedSeen[b] {
+			e.PaddedRange = append(e.PaddedRange, b)
+		}
+	}
+	return e
+}
+
+func (e *Engine) GetRangeData(isLastBlock bool) []byte {
+	if isLastBlock {
+		return e.PaddedRange
+	}
+	return e.StandardRange
 }
 
 type ThreadSafeString struct {
@@ -87,6 +86,7 @@ func PadOperations(wg *sync.WaitGroup, cfg *Config, cipherText []byte, decipherC
 		wg.Done()
 	}()
 
+	engine := NewEngine(cfg)
 	threadCh := make(chan struct{}, cfg.Threads)
 	wg2 := sync.WaitGroup{}
 	if cfg.IV != nil {
@@ -98,13 +98,13 @@ func PadOperations(wg *sync.WaitGroup, cfg *Config, cipherText []byte, decipherC
 	go WriteOutput(wg, decipherChan, cfg)
 
 	if lastBlockLen := len(Blocks[len(Blocks)-1]); lastBlockLen != cfg.BlockSize {
-		panic(fmt.Sprintf("Invalid Block Size at Block #%d (%v bytes - should be %d)", len(Blocks), lastBlockLen, cfg.BlockSize))
+		log.Fatalf("Invalid Block Size at Block #%d (%v bytes - should be %d)", len(Blocks), lastBlockLen, cfg.BlockSize)
 	}
 	endBlock := len(Blocks)
 	startBlock := 1
 	for blockNum, blockData := range Blocks[startBlock:endBlock] {
 		wg2.Add(1)
-		go PerBlockOperations(&wg2, *cfg, threadCh, decipherChan, blockNum+startBlock, blockData, Blocks[blockNum+startBlock-1])
+		go engine.PerBlockOperations(&wg2, threadCh, decipherChan, blockNum+startBlock, blockData, Blocks[blockNum+startBlock-1])
 	}
 
 	wg2.Wait()
@@ -122,8 +122,9 @@ func Sanitize(b []byte) string {
 	return string(out)
 }
 
-func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, decipherChan chan Data, blockNum int, blockData []byte, iv []byte) {
+func (e *Engine) PerBlockOperations(wg *sync.WaitGroup, threadCh chan struct{}, decipherChan chan Data, blockNum int, blockData []byte, iv []byte) {
 	defer wg.Done()
+	cfg := e.Config
 
 	strData := &ThreadSafeString{}
 	outData := &ThreadSafeString{}
@@ -139,7 +140,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 	returnData := Data{}
 	decipheredBlockBytes := []byte{}
 
-	rangeData := GetRangeDataSafe(blockNum == cfg.NumBlocks-1, cfg.BlockSize)
+	rangeData := e.GetRangeData(blockNum == cfg.NumBlocks-1)
 
 	for byteNum := 0; byteNum < cfg.BlockSize; byteNum++ {
 		var nextByte byte
@@ -176,8 +177,8 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 
 					padBlock := BuildPaddingBlock(currentByteNum, cfg.BlockSize)
 					searchBlock := BuildSearchBlock(decipheredCopy, candidate, cfg.BlockSize)
-					tmp := XORBytes(searchBlock, iv)
-					oracleIvBlock := XORBytes(tmp, padBlock)
+					tmp, _ := XORBytes(searchBlock, iv)
+					oracleIvBlock, _ := XORBytes(tmp, padBlock)
 
 					RawOracleData := BuildRawOraclePayload(oracleIvBlock, blockData)
 					
@@ -261,6 +262,7 @@ func PerBlockOperations(wg *sync.WaitGroup, cfg Config, threadCh chan struct{}, 
 func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
 	defer wg.Done()
 	
+	engine := NewEngine(cfg)
 	if cfg.IV != nil {
 		plainText = append(cfg.IV, plainText...)
 	}
@@ -292,7 +294,7 @@ func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
 		bar.PrependFunc(func(b *uiprogress.Bar) string { return strData.Get() })
 		bar.AppendFunc(func(b *uiprogress.Bar) string { return outData.Get() })
 
-		nextCt, out = PerBlockOperationsEncrypt(*cfg, i, ct, plainTextChunks[i], threadCh, bar, strData)
+		nextCt, out = engine.PerBlockOperationsEncrypt(i, ct, plainTextChunks[i], threadCh, bar, strData)
 		outData.Set(out)
 		cipherTextChunks[i] = nextCt
 	}
@@ -304,10 +306,11 @@ func PadOperationsEncrypt(wg *sync.WaitGroup, cfg *Config, plainText []byte) {
 	fmt.Printf("\n [%v] %v\n\n%v\n\n", gb.Sprint("*"), gb.Sprint("FINAL CIPHERTEXT"), white.Sprint(hex.EncodeToString(outBytes)))
 }
 
-func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plaintText []byte, threadCh chan struct{}, bar *uiprogress.Bar, strData *ThreadSafeString) (iv []byte, outData string) {
+func (e *Engine) PerBlockOperationsEncrypt(blockNum int, cipherText []byte, plaintText []byte, threadCh chan struct{}, bar *uiprogress.Bar, strData *ThreadSafeString) (iv []byte, outData string) {
+	cfg := e.Config
 	intermediateState := make([]byte, cfg.BlockSize)
 
-	rangeData := GetRangeDataSafe(false, cfg.BlockSize)
+	rangeData := e.GetRangeData(false)
 
 	for byteNum := 0; byteNum < cfg.BlockSize; byteNum++ {
 		var nextByte byte
@@ -419,7 +422,7 @@ func PerBlockOperationsEncrypt(cfg Config, blockNum int, cipherText []byte, plai
 		bar.Incr()
 	}
 
-	iv = XORBytes(intermediateState, plaintText)
+	iv, _ = XORBytes(intermediateState, plaintText)
 	outData = fmt.Sprintf(" [%v] Block %d: %v ", gb.Sprint("+"), blockNum, g.Sprint(hex.EncodeToString(iv)))
 	return iv, outData
 }

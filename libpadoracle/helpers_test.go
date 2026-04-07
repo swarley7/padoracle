@@ -57,7 +57,10 @@ func TestXORBytes(t *testing.T) {
 	a := []byte{0x01, 0x02, 0x03}
 	b := []byte{0x01, 0x04, 0x07}
 	expected := []byte{0x00, 0x06, 0x04}
-	res := XORBytes(a, b)
+	res, err := XORBytes(a, b)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if !bytes.Equal(res, expected) {
 		t.Errorf("XORBytes failed: got %x, expected %x", res, expected)
 	}

@@ -4,8 +4,10 @@ import (
 	"testing"
 )
 
-func TestGetRangeDataSafe(t *testing.T) {
-	res := GetRangeDataSafe(false, 16)
+func TestGetRangeData(t *testing.T) {
+	cfg := &Config{BlockSize: 16}
+	engine := NewEngine(cfg)
+	res := engine.GetRangeData(false)
 	if len(res) != 256 {
 		t.Fatalf("expected 256 bytes, got %d", len(res))
 	}
@@ -18,7 +20,7 @@ func TestGetRangeDataSafe(t *testing.T) {
 		seen[b] = true
 	}
 
-	resPadded := GetRangeDataSafe(true, 16)
+	resPadded := engine.GetRangeData(true)
 	if len(resPadded) != 256 {
 		t.Fatalf("expected 256 bytes for padded, got %d", len(resPadded))
 	}

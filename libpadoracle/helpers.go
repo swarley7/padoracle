@@ -125,15 +125,15 @@ func ChunkBytes(b []byte, n int) (chunks [][]byte) {
 }
 
 // XORBytes performs a byte-wise xor of two supplied bytearrays
-func XORBytes(a []byte, b []byte) []byte {
+func XORBytes(a []byte, b []byte) ([]byte, error) {
 	if len(a) != len(b) {
-		panic(fmt.Sprintf("Cannot XOR unequal length byte arrays (a=%d - b=%d)", len(a), len(b)))
+		return nil, fmt.Errorf("cannot XOR unequal length byte arrays (a=%d - b=%d)", len(a), len(b))
 	}
 	out := make([]byte, len(a))
 	for i := 0; i < len(a); i++ {
 		out[i] = a[i] ^ b[i]
 	}
-	return out
+	return out, nil
 }
 
 // BuildPaddingBlock constructs a block padded to PCKS5/7 standard based upon the blocksize
