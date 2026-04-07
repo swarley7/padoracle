@@ -1,0 +1,28 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+padoracle
+vuln_http_server
+
+# Test output and profiles
+*.test
+*.out
+*.log
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# OS specific
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Debugging files
+debug*
+server.pid
+server.log
