@@ -14,7 +14,7 @@ import (
 
 	"log"
 
-	"github.com/swarley7/padoracle/libpadoracle"
+	"github.com/bonzitechnology/padoracle/libpadoracle"
 )
 
 type testpad struct {

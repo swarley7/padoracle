@@ -1,4 +1,4 @@
-module github.com/swarley7/padoracle/libpadoracle
+module github.com/bonzitechnology/padoracle/libpadoracle
 
 go 1.17
 

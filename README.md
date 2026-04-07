@@ -108,7 +108,7 @@ There are other padding oracle exploitation tools, but `padoracle` focuses on **
 First, clone the repository:
 
 ```bash
-git clone https://github.com/swarley7/padoracle.git
+git clone https://github.com/bonzitechnology/padoracle.git
 cd padoracle
 ```
 
