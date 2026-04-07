@@ -64,9 +64,6 @@ func TestXORBytes(t *testing.T) {
 }
 
 func TestBuildPaddingBlock(t *testing.T) {
-	// byteNum represents index of the byte from the end, 0-indexed? Wait, the code says:
-	// if (i >= blockSize-byteNum) && (byteNum <= blockSize)
-	// byteNum = 0 -> padding should be [0,0,0,..,1]
 	res := BuildPaddingBlock(0, 4)
 	expected := []byte{0x00, 0x00, 0x00, 0x01}
 	if !bytes.Equal(res, expected) {
@@ -81,7 +78,6 @@ func TestBuildPaddingBlock(t *testing.T) {
 }
 
 func TestBuildSearchBlock(t *testing.T) {
-	// decipheredBlockBytes is the already found bytes
 	dec := []byte{0x41, 0x42} // A, B
 	padByteValue := byte(0x43) // C
 	res := BuildSearchBlock(dec, padByteValue, 4)

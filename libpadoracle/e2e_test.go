@@ -52,27 +52,14 @@ func decrypt(ciphertext []byte) ([]byte, bool) {
 	return plaintext[:len(plaintext)-padLen], true
 }
 
-type dummyPad struct {
+type dummyOracle struct {
 	client *http.Client
 	url    string
 }
 
-func (d dummyPad) EncodePayload(p []byte) string {
-	return hex.EncodeToString(p)
-}
-
-func (d dummyPad) DecodeCiphertextPayload(s string) []byte {
-	b, _ := hex.DecodeString(s)
-	return b
-}
-
-func (d dummyPad) DecodeIV(s string) []byte {
-	b, _ := hex.DecodeString(s)
-	return b
-}
-
-func (d dummyPad) CallOracle(payload string) bool {
-	resp, err := d.client.Get(d.url + "?ct=" + payload)
+func (d dummyOracle) Call(payload []byte) bool {
+	payloadHex := hex.EncodeToString(payload)
+	resp, err := d.client.Get(d.url + "?ct=" + payloadHex)
 	if err != nil {
 		return false
 	}
@@ -103,10 +90,9 @@ func TestEndToEnd(t *testing.T) {
 		AsciiMode:      true,
 		BlockSize:      16,
 		Threads:        10,
-		Pad:            dummyPad{client: ts.Client(), url: ts.URL},
+		Oracle:         dummyOracle{client: ts.Client(), url: ts.URL},
 	}
 
-	// Capture output or just ensure it completes without hanging
 	done := make(chan bool)
 	go func() {
 		Run(cfg)
@@ -143,7 +129,7 @@ func TestEndToEndEncrypt(t *testing.T) {
 		AsciiMode:       true,
 		BlockSize:       16,
 		Threads:         10,
-		Pad:             dummyPad{client: ts.Client(), url: ts.URL},
+		Oracle:          dummyOracle{client: ts.Client(), url: ts.URL},
 	}
 
 	done := make(chan bool)

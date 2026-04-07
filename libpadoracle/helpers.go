@@ -2,7 +2,6 @@ package libpadoracle
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 
 	"github.com/fatih/color"
@@ -13,13 +12,9 @@ const (
 	MODE_ENCRYPT = 1
 )
 
-// The Pad interface
-type pad interface {
-	EncodePayload([]byte) string
-	DecodeCiphertextPayload(string) []byte
-	DecodeIV(string) []byte
-	CallOracle(string) bool
-	// CheckResponse(interface{}) bool
+// Oracle interface for the attack
+type Oracle interface {
+	Call(payload []byte) bool
 }
 
 // Get yo colours sorted
@@ -45,29 +40,14 @@ func Banner() {
 	fmt.Println(white.Sprint(" [ Modern, Fast, Concurrent Padding Oracle Exploit Toolkit ]\n"))
 }
 
-func Reverse(s string) string {
-	var reverse string
-	for i := len(s) - 1; i >= 0; i-- {
-		reverse += string(s[i])
-	}
-	return reverse
-}
-
-func Check(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
 // pkcs7pad add pkcs7 padding
 func PKCS7(data []byte, blockSize int) ([]byte, error) {
-	if blockSize < 0 || blockSize > 256 {
+	if blockSize < 1 || blockSize > 256 {
 		return nil, fmt.Errorf("pkcs7: Invalid block size %d", blockSize)
-	} else {
-		padLen := blockSize - len(data)%blockSize
-		padding := bytes.Repeat([]byte{byte(padLen)}, padLen)
-		return append(data, padding...), nil
 	}
+	padLen := blockSize - len(data)%blockSize
+	padding := bytes.Repeat([]byte{byte(padLen)}, padLen)
+	return append(data, padding...), nil
 }
 
 type WriteData struct {
@@ -97,7 +77,7 @@ type Config struct {
 	NumHits         *uint64
 	NumMisses       *uint64
 	Statistics      Stats
-	Pad             pad
+	Oracle          Oracle
 }
 
 type Stats struct {
@@ -120,22 +100,20 @@ func Unpad(b []byte) (o []byte) {
 	if padVal > len(b) || padVal <= 0 {
 		return b
 	}
-	for i := 0; i < len(b)-padVal; i++ {
-		o = append(o, b[i])
+	// Check if all padding bytes are the same
+	for i := len(b) - padVal; i < len(b); i++ {
+		if b[i] != byte(padVal) {
+			return b
+		}
 	}
-	return o
-}
-
-func Pad(b []byte, padVal int) (o []byte) {
-	b = append(o, b...)
-	for i := len(b); i < padVal; i++ {
-		o = append(o, byte(i))
-	}
-	return o
+	return b[:len(b)-padVal]
 }
 
 // ChunkBytes chunks i into n-length chunks
 func ChunkBytes(b []byte, n int) (chunks [][]byte) {
+	if n <= 0 {
+		return [][]byte{b}
+	}
 	for i := 0; i < len(b); i += n {
 		nn := i + n
 		if nn > len(b) {
@@ -146,72 +124,40 @@ func ChunkBytes(b []byte, n int) (chunks [][]byte) {
 	return chunks
 }
 
-// ChunkStr chunks i into n-length chunks
-func ChunkStr(s string, n int) (chunks []string) {
-	runes := []rune(s)
-	if len(runes) == 0 {
-		return []string{s}
-	}
-	for i := 0; i < len(runes); i += n {
-		nn := i + n
-		if nn > len(runes) {
-			nn = len(runes)
-		}
-		chunks = append(chunks, string(runes[i:nn]))
-	}
-	return chunks
-}
-
 // XORBytes performs a byte-wise xor of two supplied bytearrays
 func XORBytes(a []byte, b []byte) []byte {
 	if len(a) != len(b) {
-		err := errors.New(fmt.Sprintf("Cannot XOR unequal length byte arrays (a=%d - b=%d)", len(a), len(b)))
-		panic(err)
+		panic(fmt.Sprintf("Cannot XOR unequal length byte arrays (a=%d - b=%d)", len(a), len(b)))
 	}
-	var xorResult []byte
+	out := make([]byte, len(a))
 	for i := 0; i < len(a); i++ {
-		xorByte := a[i] ^ b[i]
-		xorResult = append(xorResult, xorByte)
+		out[i] = a[i] ^ b[i]
 	}
-	return xorResult
+	return out
 }
 
 // BuildPaddingBlock constructs a block padded to PCKS5/7 standard based upon the blocksize
 func BuildPaddingBlock(byteNum int, blockSize int) (padding []byte) {
-	for i := 1; i <= blockSize; i++ {
-		if (i >= blockSize-byteNum) && (byteNum <= blockSize) {
-			padding = append(padding, byte(byteNum+1))
-		} else {
-			padding = append(padding, byte(0))
-		}
+	padding = make([]byte, blockSize)
+	padVal := byte(byteNum + 1)
+	for i := blockSize - 1; i >= blockSize-1-byteNum; i-- {
+		padding[i] = padVal
 	}
 	return padding
 }
 
-type Out struct {
-	Ok bool
-	D  []byte
-}
-
 // BuildSearchBlock constructs a block of forged ciphertext that will be used to test the padding oracle
 func BuildSearchBlock(decipheredBlockBytes []byte, padByteValue byte, blockSize int) (searchBlock []byte) {
-	searchBlock = append([]byte{byte(padByteValue)}, decipheredBlockBytes...)
-	maxLen := len(searchBlock)
-	for i := 0; i < blockSize-maxLen; i++ {
-		searchBlock = append([]byte{byte(0)}, searchBlock...)
-	}
+	searchBlock = make([]byte, blockSize)
+	searchBlock[blockSize-1-len(decipheredBlockBytes)] = padByteValue
+	copy(searchBlock[blockSize-len(decipheredBlockBytes):], decipheredBlockBytes)
 	return searchBlock
 }
 
 // BuildRawOraclePayload
 func BuildRawOraclePayload(paddingBlock []byte, cipherTextBlock []byte) []byte {
-	return append(paddingBlock, cipherTextBlock...)
-}
-
-func GenerateFullSlice(data byte, size int) []byte {
-	out := make([]byte, size)
-	for i := 0; i < size; i++ {
-		out[i] = data
-	}
+	out := make([]byte, len(paddingBlock)+len(cipherTextBlock))
+	copy(out, paddingBlock)
+	copy(out[len(paddingBlock):], cipherTextBlock)
 	return out
 }

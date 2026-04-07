@@ -1,18 +1,13 @@
 package libpadoracle
 
 import (
-	"bytes"
 	"testing"
 )
 
 func TestGetRangeDataSafe(t *testing.T) {
-	pre := []byte{0x01, 0x02, 0x03}
-	res := GetRangeDataSafe(pre)
+	res := GetRangeDataSafe(false, 16)
 	if len(res) != 256 {
 		t.Fatalf("expected 256 bytes, got %d", len(res))
-	}
-	if !bytes.Equal(res[:3], pre) {
-		t.Errorf("expected pre at beginning, got %x", res[:3])
 	}
 	// ensure no duplicates
 	seen := make(map[byte]bool)
@@ -21,5 +16,10 @@ func TestGetRangeDataSafe(t *testing.T) {
 			t.Errorf("duplicate byte found: %v", b)
 		}
 		seen[b] = true
+	}
+
+	resPadded := GetRangeDataSafe(true, 16)
+	if len(resPadded) != 256 {
+		t.Fatalf("expected 256 bytes for padded, got %d", len(resPadded))
 	}
 }
