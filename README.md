@@ -2,21 +2,57 @@
 An extensible, high-performance framework for exploiting padding oracles in network-based applications.
 
 ## Background
+
 A padding oracle occurs in a cryptosystem where the application (the oracle) reveals information about the legitimacy of padded ciphertext. This typically happens in cipher block chaining (CBC) mode.
 
 ### CBC Mode and Padding
-In CBC mode, the initialization vector (IV) is typically the first block of the ciphertext. For subsequent blocks, the ciphertext of the preceding block acts as the IV for the current block. 
 
-Because block ciphers require equal-length plaintext blocks, the final block of plaintext must be padded to meet the required block size. Common padding standards like PKCS5 and PKCS7 are virtually identical, except PKCS5 is standardized for 8-byte blocks, whereas PKCS7 works for any block size up to 255 bytes. Both use the value of the padding bytes to denote the number of padding bytes added. 
+In CBC mode, the encryption of a block depends on the block preceding it. Before a plaintext block is passed through the block cipher algorithm (like AES), it is XORed with the previous ciphertext block. For the very first block, an Initialization Vector (IV) is used instead.
 
-For example, given the cleartext `AAAA`, and a block size of 8, it must be padded with 4 bytes of `\x04`: `AAAA\x04\x04\x04\x04`. When the application decrypts the block, it looks at the final byte (`\x04`) and expects the last 4 bytes to all be `\x04`.
+During decryption, this process is reversed:
+1. The ciphertext block passes through the block cipher decryption algorithm, resulting in what is called the **Intermediate State** (or intermediate ciphertext).
+2. This Intermediate State is then XORed with the preceding ciphertext block (or the IV) to yield the actual plaintext.
 
-### The Attack
-The padding oracle attack exploits two facts:
-1. The preceding ciphertext block acts as the IV for the current block during decryption.
-2. The application leaks whether the padding is valid or invalid (e.g., through HTTP 500 errors, distinct error messages, or timing differences).
+```text
+    [Ciphertext n-1] ──────┐
+                           │ (XOR)
+[Ciphertext n] ───[AES Decryption]───> [Intermediate State n] ──> [Plaintext n]
+```
 
-By systematically mutating the preceding ciphertext block (the IV) and sending it to the application, an attacker can observe the application's response to determine if the tampered block resulted in valid PKCS7 padding. By iterating through all possible byte values (0-255) for each byte in the block, the attacker can decrypt the entire ciphertext without ever knowing the encryption key. They can also use this technique to forge new encrypted payloads.
+Because block ciphers require equal-length blocks (e.g., 16 bytes for AES), the final plaintext block must be padded. Common standards like PKCS7 use the value of the padding bytes to denote the number of padding bytes added. For example, if 4 bytes of padding are needed, `\x04\x04\x04\x04` is appended. 
+
+When an application decrypts the data, it checks this padding. If the last byte is `\x04`, it verifies that the preceding three bytes are also `\x04`. If they aren't, it throws a "Padding Exception".
+
+### The Attack: Recovering the Intermediate State
+
+A padding oracle vulnerability exists if the application leaks whether the padding was valid or invalid (e.g., via HTTP 500 errors, distinct error messages, or timing differences).
+
+By controlling `[Ciphertext n-1]` (the IV for the current block) and sending it to the oracle, an attacker can manipulate the XOR operation that produces `[Plaintext n]`. 
+
+Because `Plaintext = IntermediateState ^ Ciphertext(n-1)`, we can rearrange the math to:
+**`IntermediateState = Plaintext ^ Ciphertext(n-1)`**
+
+**The Decryption Exploit Flow:**
+1. We send a forged `Ciphertext n-1` consisting of 15 random bytes and 1 guessed byte (testing values 0-255).
+2. The server decrypts `Ciphertext n` into its fixed `Intermediate State`.
+3. The server XORs the `Intermediate State` with our forged `Ciphertext n-1`.
+4. If the server does **not** throw a padding error, we know that the resulting `Plaintext` ended in a valid padding byte (usually `\x01`).
+
+Since we know the forged byte we sent (`Ciphertext n-1`), and we know the resulting plaintext byte must be `\x01` (to pass the padding check), we can calculate the secret **Intermediate State** byte:
+`Intermediate_Byte = Forged_Byte ^ \x01`
+
+Once we have the Intermediate State byte, we simply XOR it with the *actual, original* `Ciphertext n-1` ripped from the network traffic to recover the true Plaintext byte!
+
+By repeating this process from right-to-left, adjusting our forged block to look for `\x02\x02`, then `\x03\x03\x03`, we can decrypt the entire ciphertext block without ever knowing the secret AES key.
+
+### The Attack: Forging Payloads (Encryption)
+
+We can also run this math in reverse. If we want the server to decrypt a block into a specific plaintext (e.g., `admin=true`), we first recover the `Intermediate State` of a dummy block (e.g., all `A`s). 
+
+Once we know the Intermediate State of the dummy block, we calculate what `Ciphertext n-1` *should* be to produce our desired plaintext:
+`Forged_Ciphertext(n-1) = IntermediateState ^ Desired_Plaintext`
+
+We then prepend this `Forged_Ciphertext(n-1)` to our dummy block and send it to the server. The server will decrypt it, perform the XOR, and blindly accept our forged plaintext. By chaining these blocks together, we can forge payloads of any length.
 
 ## Quick Start Demonstrations
 
